@@ -1,4 +1,3 @@
-use reqwest;
 use reqwest::header::InvalidHeaderValue;
 use std::io;
 use thiserror::Error;
@@ -27,4 +26,7 @@ pub enum ApplicationError {
 
     #[error("GStreamer initialization error: {0}")]
     InitError(String),
+
+    #[error("TOML parsing error: {0}")]
+    TomlParsingError(#[from] toml::de::Error),
 }
