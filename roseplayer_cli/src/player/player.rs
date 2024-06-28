@@ -1,16 +1,16 @@
+use crate::bilibili::fetch_audio_url::fetch_audio_url;
 use crate::error::ApplicationError;
-use crate::player::audio_url::fetch_audio_url;
 use crate::player::playlist::{Playlist, Track};
 use glib::MainLoop;
 use gstreamer_player::{Player, PlayerGMainContextSignalDispatcher, PlayerVideoRenderer};
 use reqwest::Client;
 use std::sync::Arc;
-use tokio::sync::{Mutex, Notify};
+use tokio::sync::{Mutex, Notify, RwLock};
 
 pub struct AudioPlayer {
     player: Player,
     client: Client,
-    playlist: Arc<Mutex<Vec<Track>>>,
+    playlist: Arc<RwLock<Vec<Track>>>,
     current_track: Arc<Mutex<usize>>,
     track_finished: Arc<Notify>,
 }
@@ -20,7 +20,6 @@ impl AudioPlayer {
         // 初始化GStreamer
         println!("Initializing GStreamer...");
         gstreamer::init().map_err(|e| ApplicationError::InitError(e.to_string()))?;
-
         // 创建一个GStreamer Player
         println!("Creating GStreamer Player...");
         let player = Player::new(
@@ -33,7 +32,7 @@ impl AudioPlayer {
         // 加载播放列表
         println!("Loading playlist from file: {}", playlist_path);
         let playlist = Playlist::load_from_file(playlist_path)?;
-        let playlist = Arc::new(Mutex::new(playlist.tracks));
+        let playlist = Arc::new(RwLock::new(playlist.tracks));
         let current_track = Arc::new(Mutex::new(0));
         let track_finished = Arc::new(Notify::new());
 
@@ -48,50 +47,46 @@ impl AudioPlayer {
     }
 
     pub async fn play_playlist(&self) -> Result<(), ApplicationError> {
-        {
-            let playlist = Arc::clone(&self.playlist);
-            let current_track = Arc::clone(&self.current_track);
-            let player = self.player.clone();
-            let client = self.client.clone();
-            let track_finished = Arc::clone(&self.track_finished);
+        let playlist = Arc::clone(&self.playlist);
+        let current_track = Arc::clone(&self.current_track);
+        let player = self.player.clone();
+        let client = self.client.clone();
+        let track_finished = Arc::clone(&self.track_finished);
 
-            player.connect_end_of_stream({
-                let track_finished = Arc::clone(&track_finished);
-                move |_| {
-                    println!("Track finished playing.");
-                    track_finished.notify_one();
+        player.connect_end_of_stream({
+            let track_finished = Arc::clone(&track_finished);
+            move |_| {
+                println!("Track finished playing.");
+                track_finished.notify_one();
+            }
+        });
+
+        tokio::spawn(async move {
+            loop {
+                let mut current_track = current_track.lock().await;
+                let playlist = playlist.read().await;
+                if *current_track >= playlist.len() {
+                    println!("Reached end of playlist.");
+                    break;
                 }
-            });
+                let track = playlist[*current_track].clone();
+                println!("Preparing to play track: {:?}", track);
+                *current_track += 1;
 
-            tokio::spawn(async move {
-                loop {
-                    let track = {
-                        let mut current_track = current_track.lock().await;
-                        if *current_track >= playlist.lock().await.len() {
-                            println!("Reached end of playlist.");
-                            break;
-                        }
-                        let track = playlist.lock().await[*current_track].clone();
-                        println!("Preparing to play track: {:?}", track);
-                        *current_track += 1;
-                        track
-                    };
-
-                    match fetch_audio_url(&client, &track.bvid, &track.cid).await {
-                        Ok(url) => {
-                            println!("Fetched audio URL: {}", url);
-                            player.set_uri(Some(&url));
-                            println!("Starting playback for track: {:?}", track);
-                            player.play();
-                            track_finished.notified().await;
-                        }
-                        Err(e) => {
-                            eprintln!("Error fetching audio URL: {:?}", e);
-                        }
+                match fetch_audio_url(&client, &track.bvid, &track.cid).await {
+                    Ok(url) => {
+                        println!("Fetched audio URL: {}", url);
+                        player.set_uri(Some(&url));
+                        println!("Starting playback for track: {:?}", track);
+                        player.play();
+                        track_finished.notified().await;
+                    }
+                    Err(e) => {
+                        eprintln!("Error fetching audio URL: {:?}", e);
                     }
                 }
-            });
-        }
+            }
+        });
 
         // 保持主线程运行以便播放音频
         println!("Starting main loop to keep audio playing...");

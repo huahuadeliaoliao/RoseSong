@@ -15,6 +15,7 @@ pub struct Playlist {
 
 impl Playlist {
     pub fn load_from_file(file_path: &str) -> Result<Self, ApplicationError> {
+        log::info!("Loading playlist from file: {}", file_path);
         let content = fs::read_to_string(file_path)?;
         let playlist: Playlist = toml::from_str(&content)?;
         Ok(playlist)
