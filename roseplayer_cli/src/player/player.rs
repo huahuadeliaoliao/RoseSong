@@ -2,7 +2,10 @@ use crate::bilibili::fetch_audio_url::fetch_audio_url;
 use crate::error::ApplicationError;
 use crate::player::playlist::{Playlist, Track};
 use glib::MainLoop;
-use gstreamer_player::{Player, PlayerGMainContextSignalDispatcher, PlayerVideoRenderer};
+use gstreamer::ClockTime;
+use gstreamer_player::{
+    Player, PlayerGMainContextSignalDispatcher, PlayerState, PlayerVideoRenderer,
+};
 use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify, RwLock};
@@ -13,6 +16,7 @@ pub struct AudioPlayer {
     playlist: Arc<RwLock<Vec<Track>>>,
     current_track: Arc<Mutex<usize>>,
     track_finished: Arc<Notify>,
+    current_state: Arc<Mutex<PlayerState>>,
 }
 
 impl AudioPlayer {
@@ -35,6 +39,19 @@ impl AudioPlayer {
         let playlist = Arc::new(RwLock::new(playlist.tracks));
         let current_track = Arc::new(Mutex::new(0));
         let track_finished = Arc::new(Notify::new());
+        let current_state = Arc::new(Mutex::new(PlayerState::Stopped)); // 初始化播放状态
+
+        // 连接 state_changed 信号
+        {
+            let current_state = Arc::clone(&current_state);
+            player.connect_state_changed(move |_, state| {
+                let current_state = Arc::clone(&current_state);
+                tokio::spawn(async move {
+                    let mut state_guard = current_state.lock().await;
+                    *state_guard = state;
+                });
+            });
+        }
 
         println!("AudioPlayer initialized successfully.");
         Ok(Self {
@@ -43,7 +60,78 @@ impl AudioPlayer {
             playlist,
             current_track,
             track_finished,
+            current_state,
         })
+    }
+
+    pub async fn play(&self) -> Result<(), ApplicationError> {
+        println!("Playing track...");
+        self.player.play();
+        Ok(())
+    }
+
+    pub async fn pause(&self) -> Result<(), ApplicationError> {
+        println!("Pausing track...");
+        self.player.pause();
+        Ok(())
+    }
+
+    pub async fn previous_track(&self) -> Result<(), ApplicationError> {
+        println!("Switching to previous track...");
+        let mut current_track = self.current_track.lock().await;
+        if *current_track > 0 {
+            *current_track -= 1;
+            self.play_current_track().await?;
+        }
+        Ok(())
+    }
+
+    pub async fn next_track(&self) -> Result<(), ApplicationError> {
+        println!("Switching to next track...");
+        let mut current_track = self.current_track.lock().await;
+        let playlist = self.playlist.read().await;
+        if *current_track < playlist.len() - 1 {
+            *current_track += 1;
+            self.play_current_track().await?;
+        }
+        Ok(())
+    }
+
+    pub async fn set_position(&self, position: u64) -> Result<(), ApplicationError> {
+        println!("Setting track position to {} nanoseconds...", position);
+        self.player.seek(ClockTime::from_nseconds(position));
+        Ok(())
+    }
+
+    pub async fn get_position(&self) -> Result<u64, ApplicationError> {
+        let position = self.player.position().map(|p| p.nseconds()).unwrap_or(0);
+        println!("Current track position: {} nanoseconds", position);
+        Ok(position)
+    }
+
+    pub async fn get_playback_state(&self) -> Result<PlayerState, ApplicationError> {
+        let state = self.current_state.lock().await;
+        Ok(*state)
+    }
+
+    async fn play_current_track(&self) -> Result<(), ApplicationError> {
+        let current_track = self.current_track.lock().await;
+        let playlist = self.playlist.read().await;
+        let track = &playlist[*current_track];
+
+        match fetch_audio_url(&self.client, &track.bvid, &track.cid).await {
+            Ok(url) => {
+                println!("Fetched audio URL");
+                self.player.set_uri(Some(&url));
+                println!("Starting playback for track: {:?}", track);
+                self.player.play();
+                Ok(())
+            }
+            Err(e) => {
+                eprintln!("Error fetching audio URL: {:?}", e);
+                Err(ApplicationError::FetchError(e.to_string()))
+            }
+        }
     }
 
     pub async fn play_playlist(&self) -> Result<(), ApplicationError> {

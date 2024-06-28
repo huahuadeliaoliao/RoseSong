@@ -29,4 +29,7 @@ pub enum ApplicationError {
 
     #[error("TOML parsing error: {0}")]
     TomlParsingError(#[from] toml::de::Error),
+
+    #[error("Fetch error: {0}")]
+    FetchError(String),
 }
