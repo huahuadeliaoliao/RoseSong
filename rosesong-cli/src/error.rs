@@ -1,3 +1,4 @@
+use flexi_logger::FlexiLoggerError;
 use reqwest::header::InvalidHeaderValue;
 use std::io;
 use thiserror::Error;
@@ -32,4 +33,7 @@ pub enum ApplicationError {
 
     #[error("Fetch error: {0}")]
     FetchError(String),
+
+    #[error("Logger initialization error: {0}")]
+    LoggerError(#[from] FlexiLoggerError), // 添加这个变体
 }
