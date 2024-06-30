@@ -1,5 +1,6 @@
 use std::io::{self, stdout};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::Arc;
 
 use ratatui::{
@@ -9,20 +10,30 @@ use ratatui::{
         terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
         ExecutableCommand,
     },
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
 
-pub fn run_cli(running: Arc<AtomicBool>) -> io::Result<()> {
+pub enum CliMessage {
+    Quit,
+}
+
+pub fn run_cli(
+    running: Arc<AtomicBool>,
+    _tx: Sender<CliMessage>,
+    _rx: Receiver<CliMessage>,
+) -> io::Result<()> {
     enable_raw_mode()?;
     stdout().execute(EnterAlternateScreen)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stdout()))?;
+    let backend = CrosstermBackend::new(stdout());
+    let mut terminal = Terminal::new(backend)?;
 
     let mut should_quit = false;
     while !should_quit && running.load(Ordering::Relaxed) {
-        terminal.draw(ui)?;
+        terminal.draw(|frame| ui(frame))?;
         should_quit = handle_events()?;
     }
 
@@ -59,7 +70,7 @@ fn handle_events() -> io::Result<bool> {
     Ok(false)
 }
 
-fn ui(frame: &mut Frame) {
+fn ui<'a>(frame: &mut Frame<'a>) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
@@ -94,6 +105,33 @@ fn ui(frame: &mut Frame) {
         Block::default().borders(Borders::ALL).title("播放列表"),
         left_layout[1],
     );
+
+    let play_status = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(
+            [
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Length(1),
+                Constraint::Min(1),
+            ]
+            .as_ref(),
+        )
+        .split(bottom_layout[0]);
+
+    let song_info = Paragraph::new(Line::from("当前歌曲: 示例歌曲 - 示例艺术家"))
+        .style(Style::default().fg(Color::Cyan))
+        .alignment(Alignment::Center);
+    frame.render_widget(song_info, play_status[0]);
+
+    let controls = Paragraph::new(Line::from(vec![
+        Span::styled("⏮ ", Style::default().fg(Color::White)),
+        Span::styled("⏯ ", Style::default().fg(Color::White)),
+        Span::styled("⏭", Style::default().fg(Color::White)),
+    ]))
+    .alignment(Alignment::Center);
+    frame.render_widget(controls, play_status[3]);
 
     frame.render_widget(
         Block::default().borders(Borders::ALL).title("播放状态"),

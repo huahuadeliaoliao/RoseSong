@@ -2,6 +2,7 @@ use flexi_logger::FlexiLoggerError;
 use reqwest::header::InvalidHeaderValue;
 use std::io;
 use thiserror::Error;
+use tokio::sync::mpsc::error::SendError;
 use tokio::sync::AcquireError;
 use tokio::task::JoinError;
 
@@ -35,5 +36,14 @@ pub enum ApplicationError {
     FetchError(String),
 
     #[error("Logger initialization error: {0}")]
-    LoggerError(#[from] FlexiLoggerError), // 添加这个变体
+    LoggerError(#[from] FlexiLoggerError),
+
+    #[error("Channel send error: {0}")]
+    SendError(String),
+}
+
+impl<T> From<SendError<T>> for ApplicationError {
+    fn from(error: SendError<T>) -> Self {
+        ApplicationError::SendError(error.to_string())
+    }
 }
