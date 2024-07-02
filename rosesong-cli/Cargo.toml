@@ -3,7 +3,12 @@ name = "roseplayer_cli"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "rsg"
+path = "src/main.rs"
+
 [dependencies]
+clap = { version = "4.5.8", features = ["derive"] }
 gstreamer = "0.22.6"
 gstreamer-player = "0.22.6"
 glib = "0.19.9"

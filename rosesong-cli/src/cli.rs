@@ -1,40 +1,62 @@
+use std::env;
+use std::fs;
 use std::io::{self, stdout};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::Arc;
 
+use ratatui::crossterm::ExecutableCommand;
 use ratatui::{
     backend::CrosstermBackend,
     crossterm::{
-        event::{self, Event, KeyCode, KeyModifiers},
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-        ExecutableCommand,
+        event::{self, Event, KeyCode},
+        terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen},
     },
-    layout::{Alignment, Constraint, Direction, Layout},
-    style::{Color, Style},
-    text::{Line, Span},
+    layout::{Constraint, Direction, Layout},
+    style::{Modifier, Style},
+    text::Line,
     widgets::{Block, Borders, Paragraph},
     Frame, Terminal,
 };
+
+use crate::error::ApplicationError;
 
 pub enum CliMessage {
     Quit,
 }
 
-pub fn run_cli(
-    running: Arc<AtomicBool>,
-    _tx: Sender<CliMessage>,
-    _rx: Receiver<CliMessage>,
-) -> io::Result<()> {
+enum View {
+    Playlists(usize),
+    Favorites(usize),
+}
+
+impl View {
+    fn index_mut(&mut self) -> Option<&mut usize> {
+        match self {
+            View::Playlists(ref mut index) | View::Favorites(ref mut index) => Some(index),
+        }
+    }
+}
+
+pub fn run_cli(_tx: Sender<CliMessage>, _rx: Receiver<CliMessage>) -> Result<(), ApplicationError> {
     enable_raw_mode()?;
-    stdout().execute(EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout());
+    let backend = CrosstermBackend::new(io::stdout());
     let mut terminal = Terminal::new(backend)?;
 
     let mut should_quit = false;
-    while !should_quit && running.load(Ordering::Relaxed) {
-        terminal.draw(|frame| ui(frame))?;
-        should_quit = handle_events()?;
+    let mut current_view = View::Playlists(0);
+
+    while !should_quit {
+        terminal.draw(|frame| {
+            let dir = match &current_view {
+                View::Playlists(_) => "playlists",
+                View::Favorites(_) => "favorites",
+            };
+            let content = fetch_directory_content(dir).unwrap_or_else(|_| vec![]);
+            if let Err(e) = ui(frame, dir, &current_view, &content) {
+                eprintln!("UI error: {}", e);
+            }
+        })?;
+        should_quit = handle_events(&mut current_view)?;
     }
 
     disable_raw_mode()?;
@@ -42,27 +64,43 @@ pub fn run_cli(
     Ok(())
 }
 
-fn handle_events() -> io::Result<bool> {
+fn handle_events(current_view: &mut View) -> Result<bool, ApplicationError> {
     if event::poll(std::time::Duration::from_millis(50))? {
         if let Event::Key(key) = event::read()? {
             match key {
                 event::KeyEvent {
                     code: KeyCode::Char('q'),
-                    modifiers: KeyModifiers::NONE,
-                    kind: event::KeyEventKind::Press,
                     ..
                 }
                 | event::KeyEvent {
-                    code: KeyCode::Esc,
-                    kind: event::KeyEventKind::Press,
-                    ..
-                }
-                | event::KeyEvent {
-                    code: KeyCode::Char('c'),
-                    modifiers: KeyModifiers::CONTROL,
-                    kind: event::KeyEventKind::Press,
-                    ..
+                    code: KeyCode::Esc, ..
                 } => return Ok(true),
+                event::KeyEvent {
+                    code: KeyCode::Char('f'),
+                    ..
+                } => *current_view = View::Favorites(0),
+                event::KeyEvent {
+                    code: KeyCode::Char('p'),
+                    ..
+                } => *current_view = View::Playlists(0),
+                event::KeyEvent {
+                    code: KeyCode::Char('j'),
+                    ..
+                } => {
+                    if let Some(index) = current_view.index_mut() {
+                        *index += 1;
+                    }
+                }
+                event::KeyEvent {
+                    code: KeyCode::Char('k'),
+                    ..
+                } => {
+                    if let Some(index) = current_view.index_mut() {
+                        if *index > 0 {
+                            *index -= 1;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
@@ -70,76 +108,61 @@ fn handle_events() -> io::Result<bool> {
     Ok(false)
 }
 
-fn ui<'a>(frame: &mut Frame<'a>) {
+fn ui<'a>(
+    frame: &mut Frame<'a>,
+    directory: &str,
+    view: &View,
+    content: &[String],
+) -> Result<(), ApplicationError> {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
+        .constraints([Constraint::Percentage(100)].as_ref())
         .split(frame.size());
 
-    let top_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
-        .split(main_layout[0]);
+    let selected_index = match view {
+        View::Playlists(index) | View::Favorites(index) => *index,
+    };
 
-    let left_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
-        .split(top_layout[0]);
+    let text_lines: Vec<Line> = content
+        .iter()
+        .enumerate()
+        .map(|(idx, line)| {
+            if idx == selected_index {
+                Line::styled(line.clone(), Style::new().add_modifier(Modifier::REVERSED))
+            } else {
+                Line::raw(line.clone())
+            }
+        })
+        .collect();
 
-    let bottom_layout = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Percentage(80), Constraint::Percentage(20)].as_ref())
-        .split(main_layout[1]);
+    let paragraph =
+        Paragraph::new(text_lines).block(Block::default().borders(Borders::ALL).title(directory));
+    frame.render_widget(paragraph, main_layout[0]);
 
-    frame.render_widget(
-        Block::default().borders(Borders::ALL).title("导入歌曲"),
-        left_layout[0],
-    );
+    Ok(())
+}
 
-    frame.render_widget(
-        Block::default().borders(Borders::ALL).title("收藏夹"),
-        top_layout[1],
-    );
+fn fetch_directory_content(dir_name: &str) -> Result<Vec<String>, ApplicationError> {
+    let home_dir = env::var("HOME")
+        .map_err(|e| ApplicationError::IoError(io::Error::new(io::ErrorKind::NotFound, e)))?;
+    let dir_path = PathBuf::from(home_dir)
+        .join(".config/rosesong")
+        .join(dir_name);
 
-    frame.render_widget(
-        Block::default().borders(Borders::ALL).title("播放列表"),
-        left_layout[1],
-    );
+    let entries = fs::read_dir(dir_path)?
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            // Only include files with a .toml extension
+            if path.extension().and_then(std::ffi::OsStr::to_str) == Some("toml") {
+                path.file_name()
+                    .and_then(std::ffi::OsStr::to_str)
+                    .map(String::from)
+            } else {
+                None
+            }
+        })
+        .collect();
 
-    let play_status = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints(
-            [
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Min(1),
-            ]
-            .as_ref(),
-        )
-        .split(bottom_layout[0]);
-
-    let song_info = Paragraph::new(Line::from("当前歌曲: 示例歌曲 - 示例艺术家"))
-        .style(Style::default().fg(Color::Cyan))
-        .alignment(Alignment::Center);
-    frame.render_widget(song_info, play_status[0]);
-
-    let controls = Paragraph::new(Line::from(vec![
-        Span::styled("⏮ ", Style::default().fg(Color::White)),
-        Span::styled("⏯ ", Style::default().fg(Color::White)),
-        Span::styled("⏭", Style::default().fg(Color::White)),
-    ]))
-    .alignment(Alignment::Center);
-    frame.render_widget(controls, play_status[3]);
-
-    frame.render_widget(
-        Block::default().borders(Borders::ALL).title("播放状态"),
-        bottom_layout[0],
-    );
-
-    frame.render_widget(
-        Block::default().borders(Borders::ALL).title("相关歌曲"),
-        bottom_layout[1],
-    );
+    Ok(entries)
 }

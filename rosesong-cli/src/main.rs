@@ -3,29 +3,39 @@ mod cli;
 mod error;
 mod player;
 
-use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{mpsc, Arc};
-use std::thread;
-
 use crate::error::ApplicationError;
 use crate::player::playlist::PlayMode;
 use crate::player::AudioPlayer;
+use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
+use std::fs;
+use std::sync::mpsc;
+use std::thread;
 
 #[tokio::main]
 async fn main() -> Result<(), ApplicationError> {
-    let home_dir = match std::env::var("HOME") {
-        Ok(dir) => dir,
-        Err(e) => {
-            return Err(ApplicationError::IoError(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("Failed to get HOME environment variable: {}", e),
-            )))
-        }
-    };
+    let home_dir = std::env::var("HOME").map_err(|e| {
+        ApplicationError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("Failed to get HOME environment variable: {}", e),
+        ))
+    })?;
 
+    // Define the required directories
+    let required_dirs = [
+        format!("{}/.config/rosesong/logs", home_dir),
+        format!("{}/.config/rosesong/favorites", home_dir),
+        format!("{}/.config/rosesong/playlists", home_dir),
+        format!("{}/.config/rosesong/settings", home_dir),
+    ];
+
+    // Ensure all directories exist
+    for dir in &required_dirs {
+        fs::create_dir_all(dir).map_err(|e| ApplicationError::IoError(e))?;
+    }
+
+    // Logger setup
     Logger::try_with_str("info")?
-        .log_to_file(FileSpec::default().directory(format!("{}/.config/rosesong/logs", home_dir)))
+        .log_to_file(FileSpec::default().directory(&required_dirs[0]))
         .rotate(
             Criterion::Size(1_000_000),
             Naming::Timestamps,
@@ -34,28 +44,20 @@ async fn main() -> Result<(), ApplicationError> {
         .duplicate_to_stderr(Duplicate::None)
         .start()?;
 
-    let running = Arc::new(AtomicBool::new(true));
-    let running_clone = running.clone();
-
     let (tx, rx) = mpsc::channel();
 
-    let cli_thread = thread::spawn({
-        let running_clone = running_clone.clone();
-        let tx = tx.clone();
-        move || {
-            if let Err(e) = cli::run_cli(running_clone, tx, rx) {
-                eprintln!("CLI error: {}", e);
-            }
+    let cli_thread = thread::spawn(move || {
+        if let Err(e) = cli::run_cli(tx, rx) {
+            eprintln!("CLI error: {}", e);
         }
     });
 
     let play_mode = PlayMode::Shuffle; // 默认循环播放模式
-    let initial_track_index = 0; // 默认播放序号为 0
+    let initial_track_index = 1; // 默认播放序号为 0
 
     let audio_player = AudioPlayer::new(play_mode, initial_track_index).await?;
     audio_player.play_playlist().await?;
 
-    running.store(false, Ordering::Relaxed);
     if let Err(e) = cli_thread.join() {
         eprintln!("Error joining CLI thread: {:?}", e);
     }

@@ -10,7 +10,7 @@ pub struct Track {
     pub bvid: String,
     pub cid: String,
     pub title: Option<String>,
-    pub ownername: Option<String>,
+    pub owner: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -76,7 +76,7 @@ pub fn set_current_track_index(index: usize) {
 pub fn load_first_track_index(file_path: &str) -> Result<usize, ApplicationError> {
     let playlist = Playlist::load_from_file(file_path)?;
     if !playlist.tracks.is_empty() {
-        Ok(0) // 默认返回第一首歌的序号为 0
+        Ok(0)
     } else {
         Err(ApplicationError::DataParsingError(
             "Playlist is empty".to_string(),
@@ -84,7 +84,7 @@ pub fn load_first_track_index(file_path: &str) -> Result<usize, ApplicationError
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)] // 添加 PartialEq 派生
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlayMode {
     Loop,
     Shuffle,
