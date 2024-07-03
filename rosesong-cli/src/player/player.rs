@@ -12,6 +12,7 @@ use log::{error, info};
 use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::time::{sleep, Duration};
 
 #[derive(Clone)]
 pub struct AudioPlayer {
@@ -35,10 +36,14 @@ enum PlayerCommand {
 }
 
 async fn verify_audio_url(client: &Client, url: &str) -> Result<bool, ApplicationError> {
-    match client.head(url).send().await {
-        Ok(response) => Ok(response.status().is_success()),
-        Err(_) => Ok(false),
-    }
+    let response = client
+        .get(url)
+        .header("Range", "bytes=0-1024") // 只请求前 1KB 数据
+        .send()
+        .await
+        .map_err(|e| ApplicationError::NetworkError(e.to_string()))?;
+
+    Ok(response.status().is_success())
 }
 
 async fn fetch_and_verify_audio_url(
@@ -46,20 +51,37 @@ async fn fetch_and_verify_audio_url(
     bvid: &str,
     cid: &str,
 ) -> Result<String, ApplicationError> {
-    loop {
+    const MAX_RETRIES: u32 = 10;
+    const RETRY_DELAY: Duration = Duration::from_secs(3);
+
+    for attempt in 1..=MAX_RETRIES {
         match fetch_audio_url(client, bvid, cid).await {
             Ok(url) => {
                 if verify_audio_url(client, &url).await? {
                     return Ok(url);
                 } else {
-                    error!("Audio URL verification failed, retrying...");
+                    error!(
+                        "Audio URL verification failed, attempt {}/{}",
+                        attempt, MAX_RETRIES
+                    );
                 }
             }
             Err(e) => {
-                error!("Error fetching audio URL: {}, retrying...", e);
+                error!(
+                    "Error fetching audio URL: {}, attempt {}/{}",
+                    e, attempt, MAX_RETRIES
+                );
             }
         }
+
+        if attempt < MAX_RETRIES {
+            sleep(RETRY_DELAY).await;
+        }
     }
+
+    Err(ApplicationError::FetchError(
+        "Max retries reached for fetching and verifying audio URL".to_string(),
+    ))
 }
 
 impl AudioPlayer {
@@ -226,7 +248,13 @@ impl AudioPlayer {
 
         tokio::spawn(async move {
             loop {
-                let track = get_current_track().unwrap();
+                let track = match get_current_track() {
+                    Ok(track) => track,
+                    Err(e) => {
+                        error!("Error getting current track: {}", e);
+                        break;
+                    }
+                };
 
                 match fetch_and_verify_audio_url(&client, &track.bvid, &track.cid).await {
                     Ok(url) => {
@@ -236,11 +264,13 @@ impl AudioPlayer {
                         player.play();
                         track_finished.notified().await;
                     }
-                    Err(_e) => {
-                        error!("Error fetching and verifying audio URL");
+                    Err(e) => {
+                        error!("Error fetching and verifying audio URL: {}", e);
+                        break;
                     }
                 }
 
+                // Decide whether to move to the next track based on play mode
                 if play_mode != PlayMode::SingleRepeat {
                     move_to_next_track(play_mode);
                 }

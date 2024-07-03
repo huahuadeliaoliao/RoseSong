@@ -143,8 +143,9 @@ fn ui<'a>(
 }
 
 fn fetch_directory_content(dir_name: &str) -> Result<Vec<String>, ApplicationError> {
-    let home_dir = env::var("HOME")
-        .map_err(|e| ApplicationError::IoError(io::Error::new(io::ErrorKind::NotFound, e)))?;
+    let home_dir = env::var("HOME").map_err(|e| {
+        ApplicationError::IoError(io::Error::new(io::ErrorKind::NotFound, e).to_string())
+    })?;
     let dir_path = PathBuf::from(home_dir)
         .join(".config/rosesong")
         .join(dir_name);

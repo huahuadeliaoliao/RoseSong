@@ -4,20 +4,24 @@ mod error;
 mod player;
 
 use crate::error::ApplicationError;
-use crate::player::playlist::PlayMode;
+use crate::player::playlist::{load_first_track_index, PlayMode};
 use crate::player::AudioPlayer;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use std::fs;
+use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
 
 #[tokio::main]
 async fn main() -> Result<(), ApplicationError> {
     let home_dir = std::env::var("HOME").map_err(|e| {
-        ApplicationError::IoError(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("Failed to get HOME environment variable: {}", e),
-        ))
+        ApplicationError::IoError(
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Failed to get HOME environment variable: {}", e),
+            )
+            .to_string(),
+        )
     })?;
 
     // Define the required directories
@@ -30,7 +34,13 @@ async fn main() -> Result<(), ApplicationError> {
 
     // Ensure all directories exist
     for dir in &required_dirs {
-        fs::create_dir_all(dir).map_err(|e| ApplicationError::IoError(e))?;
+        fs::create_dir_all(dir)?;
+    }
+
+    // Check if playlist.toml exists, if not, create an empty one
+    let playlist_path = format!("{}/.config/rosesong/playlists/playlist.toml", home_dir);
+    if !Path::new(&playlist_path).exists() {
+        fs::write(&playlist_path, "")?;
     }
 
     // Logger setup
@@ -52,8 +62,8 @@ async fn main() -> Result<(), ApplicationError> {
         }
     });
 
-    let play_mode = PlayMode::Shuffle; // 默认循环播放模式
-    let initial_track_index = 1; // 默认播放序号为 0
+    let play_mode = PlayMode::Loop; // 默认循环播放模式
+    let initial_track_index = load_first_track_index(&playlist_path).await?;
 
     let audio_player = AudioPlayer::new(play_mode, initial_track_index).await?;
     audio_player.play_playlist().await?;
