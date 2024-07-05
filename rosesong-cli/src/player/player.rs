@@ -9,9 +9,10 @@ use gstreamer_player::{
     Player, PlayerGMainContextSignalDispatcher, PlayerState, PlayerVideoRenderer,
 };
 use log::{error, info};
+use reqwest::header::{ACCEPT, RANGE, USER_AGENT};
 use reqwest::Client;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, Notify};
+use tokio::sync::{mpsc, Notify, RwLock};
 use tokio::time::{sleep, Duration};
 
 #[derive(Clone)]
@@ -19,7 +20,7 @@ pub struct AudioPlayer {
     player: Player,
     client: Client,
     track_finished: Arc<Notify>,
-    current_state: Arc<Mutex<PlayerState>>,
+    current_state: Arc<RwLock<PlayerState>>,
     sender: mpsc::Sender<PlayerCommand>,
     play_mode: PlayMode,
 }
@@ -33,55 +34,6 @@ enum PlayerCommand {
     GetPosition(mpsc::Sender<u64>),
     GetDuration(mpsc::Sender<u64>),
     GetPlaybackState(mpsc::Sender<PlayerState>),
-}
-
-async fn verify_audio_url(client: &Client, url: &str) -> Result<bool, ApplicationError> {
-    let response = client
-        .get(url)
-        .header("Range", "bytes=0-1024") // 只请求前 1KB 数据
-        .send()
-        .await
-        .map_err(|e| ApplicationError::NetworkError(e.to_string()))?;
-
-    Ok(response.status().is_success())
-}
-
-async fn fetch_and_verify_audio_url(
-    client: &Client,
-    bvid: &str,
-    cid: &str,
-) -> Result<String, ApplicationError> {
-    const MAX_RETRIES: u32 = 10;
-    const RETRY_DELAY: Duration = Duration::from_secs(3);
-
-    for attempt in 1..=MAX_RETRIES {
-        match fetch_audio_url(client, bvid, cid).await {
-            Ok(url) => {
-                if verify_audio_url(client, &url).await? {
-                    return Ok(url);
-                } else {
-                    error!(
-                        "Audio URL verification failed, attempt {}/{}",
-                        attempt, MAX_RETRIES
-                    );
-                }
-            }
-            Err(e) => {
-                error!(
-                    "Error fetching audio URL: {}, attempt {}/{}",
-                    e, attempt, MAX_RETRIES
-                );
-            }
-        }
-
-        if attempt < MAX_RETRIES {
-            sleep(RETRY_DELAY).await;
-        }
-    }
-
-    Err(ApplicationError::FetchError(
-        "Max retries reached for fetching and verifying audio URL".to_string(),
-    ))
 }
 
 impl AudioPlayer {
@@ -99,7 +51,7 @@ impl AudioPlayer {
 
         let client = Client::new();
         let track_finished = Arc::new(Notify::new());
-        let current_state = Arc::new(Mutex::new(PlayerState::Stopped));
+        let current_state = Arc::new(RwLock::new(PlayerState::Stopped));
 
         set_current_track_index(initial_track_index);
 
@@ -115,9 +67,13 @@ impl AudioPlayer {
                 while let Some(command) = receiver.recv().await {
                     match command {
                         PlayerCommand::Play => {
+                            let mut state = current_state.write().await;
+                            *state = PlayerState::Playing;
                             player.play();
                         }
                         PlayerCommand::Pause => {
+                            let mut state = current_state.write().await;
+                            *state = PlayerState::Paused;
                             player.pause();
                         }
                         PlayerCommand::PreviousTrack => {
@@ -160,7 +116,7 @@ impl AudioPlayer {
                             let _ = responder.send(duration);
                         }
                         PlayerCommand::GetPlaybackState(responder) => {
-                            let state = *current_state.lock().await;
+                            let state = *current_state.read().await;
                             let _ = responder.send(state);
                         }
                     }
@@ -270,7 +226,6 @@ impl AudioPlayer {
                     }
                 }
 
-                // Decide whether to move to the next track based on play mode
                 if play_mode != PlayMode::SingleRepeat {
                     move_to_next_track(play_mode);
                 }
@@ -284,4 +239,47 @@ impl AudioPlayer {
         info!("Main loop exited.");
         Ok(())
     }
+}
+
+async fn verify_audio_url(client: Arc<Client>, url: Arc<String>) -> Result<bool, ApplicationError> {
+    let response = client
+        .get(&*url)
+        .header(USER_AGENT, "Mozilla/5.0 BiliDroid/..* (bbcallen@gmail.com)")
+        .header(ACCEPT, "*/*")
+        .header(RANGE, "bytes=0-1024")
+        .header("Referer", "https://www.bilibili.com")
+        .send()
+        .await
+        .map_err(|e| ApplicationError::NetworkError(e.to_string()))?;
+
+    Ok(response.status().is_success())
+}
+
+async fn fetch_and_verify_audio_url(
+    client: &Client,
+    bvid: &str,
+    cid: &str,
+) -> Result<String, ApplicationError> {
+    const MAX_RETRIES: u32 = 10;
+    const RETRY_DELAY: Duration = Duration::from_secs(3);
+
+    for attempt in 1..=MAX_RETRIES {
+        let url = fetch_audio_url(client, bvid, cid).await?;
+        if verify_audio_url(Arc::new(client.clone()), Arc::new(url.clone())).await? {
+            return Ok(url);
+        } else {
+            error!(
+                "Audio URL verification failed, attempt {}/{}",
+                attempt, MAX_RETRIES
+            );
+        }
+
+        if attempt < MAX_RETRIES {
+            sleep(RETRY_DELAY).await;
+        }
+    }
+
+    Err(ApplicationError::FetchError(
+        "Max retries reached for fetching and verifying audio URL".to_string(),
+    ))
 }
