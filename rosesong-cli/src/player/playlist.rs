@@ -95,16 +95,6 @@ pub fn set_current_track_index(index: usize) -> Result<(), ApplicationError> {
     Ok(())
 }
 
-pub async fn load_first_track_index(file_path: &str) -> Result<usize, ApplicationError> {
-    let playlist = Playlist::load_from_file(file_path)?;
-    if !playlist.tracks.is_empty() {
-        Ok(0)
-    } else {
-        log::error!("Current playlist is empty");
-        process::exit(1);
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PlayMode {
     Loop,

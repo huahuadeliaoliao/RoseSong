@@ -1,4 +1,5 @@
 use flexi_logger::FlexiLoggerError;
+use glib::BoolError;
 use reqwest::header::InvalidHeaderValue;
 use std::io;
 use thiserror::Error;
@@ -43,6 +44,21 @@ pub enum ApplicationError {
 
     #[error("Mutex lock error: {0}")]
     MutexLockError(String),
+
+    #[error("GStreamer element error: {0}")]
+    ElementError(String),
+
+    #[error("GStreamer pipeline error: {0}")]
+    PipelineError(String),
+
+    #[error("GStreamer link error: {0}")]
+    LinkError(String),
+
+    #[error("GStreamer state error: {0}")]
+    StateError(String),
+
+    #[error("Error connecting signal: {0}")]
+    ConnectError(String),
 }
 
 impl From<reqwest::Error> for ApplicationError {
@@ -90,5 +106,13 @@ impl From<FlexiLoggerError> for ApplicationError {
 impl<T> From<SendError<T>> for ApplicationError {
     fn from(error: SendError<T>) -> Self {
         ApplicationError::SendError(error.to_string())
+    }
+}
+
+impl From<BoolError> for ApplicationError {
+    fn from(_: BoolError) -> Self {
+        ApplicationError::InitError(
+            "Failed to perform an operation on GStreamer pipeline".to_string(),
+        )
     }
 }

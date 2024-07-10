@@ -4,7 +4,7 @@ mod error;
 mod player;
 
 use crate::error::ApplicationError;
-use crate::player::playlist::{load_first_track_index, PlayMode};
+use crate::player::playlist::PlayMode;
 use crate::player::AudioPlayer;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use std::fs;
@@ -63,7 +63,7 @@ async fn main() -> Result<(), ApplicationError> {
     });
 
     let play_mode = PlayMode::Loop; // 默认循环播放模式
-    let initial_track_index = load_first_track_index(&playlist_path).await?;
+    let initial_track_index = 0;
 
     let audio_player = AudioPlayer::new(play_mode, initial_track_index).await?;
     audio_player.play_playlist().await?;
