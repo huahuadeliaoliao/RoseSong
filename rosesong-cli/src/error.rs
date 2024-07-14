@@ -56,9 +56,6 @@ pub enum ApplicationError {
 
     #[error("GStreamer state error: {0}")]
     StateError(String),
-
-    #[error("Error connecting signal: {0}")]
-    ConnectError(String),
 }
 
 impl From<reqwest::Error> for ApplicationError {

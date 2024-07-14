@@ -1,16 +1,16 @@
 mod bilibili;
-mod cli;
 mod error;
 mod player;
 
 use crate::error::ApplicationError;
 use crate::player::playlist::PlayMode;
 use crate::player::AudioPlayer;
+use daemonize::Daemonize;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use std::fs;
+use std::fs::File;
 use std::path::Path;
-use std::sync::mpsc;
-use std::thread;
+use std::process::Command;
 
 #[tokio::main]
 async fn main() -> Result<(), ApplicationError> {
@@ -54,23 +54,40 @@ async fn main() -> Result<(), ApplicationError> {
         .duplicate_to_stderr(Duplicate::None)
         .start()?;
 
-    let (tx, rx) = mpsc::channel();
+    let pid_file = "/tmp/rosesong.pid";
 
-    let cli_thread = thread::spawn(move || {
-        if let Err(e) = cli::run_cli(tx, rx) {
-            eprintln!("CLI error: {}", e);
+    // Check if the PID file exists and if the process is running
+    if Path::new(pid_file).exists() {
+        if let Ok(pid) = fs::read_to_string(pid_file) {
+            if let Ok(_) = Command::new("kill").arg("-0").arg(pid.trim()).output() {
+                println!("rosesong已经在后台运行");
+                return Ok(());
+            }
         }
-    });
+    }
+
+    // Daemonize setup
+    let stdout = File::create("/tmp/daemon.out").unwrap();
+    let stderr = File::create("/tmp/daemon.err").unwrap();
+
+    let daemonize = Daemonize::new()
+        .pid_file(pid_file) // Specify the location for the PID file
+        .stdout(stdout) // Redirect stdout to a file
+        .stderr(stderr) // Redirect stderr to a file
+        .chown_pid_file(true); // Change the owner of the PID file to the current user
+
+    match daemonize.start() {
+        Ok(_) => println!("Daemon started successfully"),
+        Err(e) => {
+            eprintln!("Error, {}", e);
+        }
+    }
 
     let play_mode = PlayMode::Loop; // 默认循环播放模式
     let initial_track_index = 0;
 
     let audio_player = AudioPlayer::new(play_mode, initial_track_index).await?;
     audio_player.play_playlist().await?;
-
-    if let Err(e) = cli_thread.join() {
-        eprintln!("Error joining CLI thread: {:?}", e);
-    }
 
     Ok(())
 }

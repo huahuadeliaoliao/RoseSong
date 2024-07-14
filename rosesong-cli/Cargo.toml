@@ -4,26 +4,26 @@ version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "rsg"
+name = "rosesong"
 path = "src/main.rs"
+
+[[bin]]
+name = "rsg"
+path = "src/cli/cli.rs"
 
 [dependencies]
 clap = { version = "4.5.8", features = ["derive"] }
+daemonize = "0.5.0"
 gstreamer = "0.22.6"
-gstreamer-player = "0.22.6"
-gstreamer-app = "0.22.6"
-gstreamer-base = "0.22.6"
 glib = "0.19.9"
 rand = "0.8.5"
 lazy_static = "1.5.0"
 reqwest = { version = "0.12.5", features = ["json", "stream"] }
 tokio = { version = "1.38.0", features = ["macros", "sync", "rt", "rt-multi-thread", "time", "signal"] }
-futures = "0.3.30"
-futures-util = "0.3.30"
+tokio-uds = "0.2.7"
 serde = { version = "1.0.204", features = ["serde_derive"] }
 serde_json = "1.0.120"
 thiserror = "1.0.61"
-ratatui = "0.27.0"
 log = "0.4.22"
 flexi_logger = "0.28.5"
 toml = "0.8.14"
