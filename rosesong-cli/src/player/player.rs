@@ -7,11 +7,10 @@ use glib::object::ObjectExt;
 use glib::ControlFlow;
 use glib::MainLoop;
 use gstreamer::prelude::*;
-use gstreamer::{ClockTime, Pipeline};
+use gstreamer::Pipeline;
 use log::{error, info};
 use reqwest::header::{ACCEPT, RANGE, USER_AGENT};
 use reqwest::Client;
-use std::borrow::Cow;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Notify, RwLock};
 use tokio::time::{sleep, Duration};
@@ -30,19 +29,7 @@ pub struct AudioPlayer {
     client: Arc<Client>,
     track_finished: Arc<Notify>,
     current_state: Arc<RwLock<PlayerState>>,
-    sender: mpsc::Sender<PlayerCommand>,
     play_mode: PlayMode,
-}
-
-pub enum PlayerCommand {
-    Play,
-    Pause,
-    PreviousTrack,
-    NextTrack,
-    SetPosition(u64),
-    GetPosition(mpsc::Sender<u64>),
-    GetDuration(mpsc::Sender<u64>),
-    GetPlaybackState(mpsc::Sender<PlayerState>),
 }
 
 impl AudioPlayer {
@@ -50,7 +37,6 @@ impl AudioPlayer {
         play_mode: PlayMode,
         initial_track_index: usize,
     ) -> Result<Self, ApplicationError> {
-        info!("Initializing GStreamer...");
         gstreamer::init().map_err(|e| ApplicationError::InitError(e.to_string()))?;
         info!("Creating GStreamer pipeline...");
         let pipeline = Arc::new(gstreamer::Pipeline::new());
@@ -61,207 +47,39 @@ impl AudioPlayer {
 
         set_current_track_index(initial_track_index)?;
 
-        let (sender, mut receiver) = mpsc::channel(32);
-
-        {
-            let pipeline = Arc::clone(&pipeline);
-            let current_state = Arc::clone(&current_state);
-            let client = Arc::clone(&client);
-            let play_mode = play_mode.clone();
-
-            tokio::spawn(async move {
-                while let Some(command) = receiver.recv().await {
-                    if let Err(e) = Self::handle_command(
-                        command,
-                        pipeline.clone(),
-                        current_state.clone(),
-                        &client,
-                        play_mode.clone(),
-                    )
-                    .await
-                    {
-                        error!("Error handling command: {}", e);
-                    }
-                }
-            });
-        }
-
-        info!("AudioPlayer initialized successfully.");
+        info!("GStreamer created successfully.");
         Ok(Self {
             pipeline,
             client,
             track_finished,
             current_state,
-            sender,
             play_mode,
         })
     }
 
-    async fn handle_command(
-        command: PlayerCommand,
-        pipeline: Arc<Pipeline>,
-        current_state: Arc<RwLock<PlayerState>>,
-        client: &Client,
-        play_mode: PlayMode,
-    ) -> Result<(), ApplicationError> {
-        match command {
-            PlayerCommand::Play => {
-                pipeline.set_state(gstreamer::State::Playing).map_err(|_| {
-                    ApplicationError::StateError("Failed to set pipeline to Playing".to_string())
-                })?;
-                let mut state = current_state.write().await;
-                *state = PlayerState::Playing;
-            }
-            PlayerCommand::Pause => {
-                pipeline.set_state(gstreamer::State::Paused).map_err(|_| {
-                    ApplicationError::StateError("Failed to set pipeline to Paused".to_string())
-                })?;
-                let mut state = current_state.write().await;
-                *state = PlayerState::Paused;
-            }
-            PlayerCommand::PreviousTrack | PlayerCommand::NextTrack => {
-                let move_next = matches!(command, PlayerCommand::NextTrack);
-                if move_next {
-                    move_to_next_track(play_mode.clone())?;
-                } else {
-                    move_to_next_track(PlayMode::Loop)?;
-                }
-                let track = get_current_track()?;
-                match fetch_and_verify_audio_url(client, &track.bvid, &track.cid).await {
-                    Ok(url) => {
-                        set_pipeline_uri_with_headers(&pipeline, &url).await?;
-                        pipeline.set_state(gstreamer::State::Playing).map_err(|_| {
-                            ApplicationError::StateError(
-                                "Failed to set pipeline to Playing".to_string(),
-                            )
-                        })?;
-                    }
-                    Err(e) => {
-                        error!("Error fetching audio URL: {}", e);
-                        let mut state = current_state.write().await;
-                        *state = PlayerState::Error;
-                    }
-                }
-            }
-            PlayerCommand::SetPosition(position) => {
-                pipeline
-                    .seek_simple(
-                        gstreamer::SeekFlags::FLUSH,
-                        ClockTime::from_nseconds(position),
-                    )
-                    .map_err(|_| {
-                        ApplicationError::PipelineError("Failed to seek in pipeline".to_string())
-                    })?;
-            }
-            PlayerCommand::GetPosition(responder) => {
-                let position = pipeline
-                    .query_position::<ClockTime>()
-                    .map(|p| p.nseconds())
-                    .unwrap_or(0);
-                let _ = responder.send(position);
-            }
-            PlayerCommand::GetDuration(responder) => {
-                let duration = pipeline
-                    .query_duration::<ClockTime>()
-                    .map(|d| d.nseconds())
-                    .unwrap_or(0);
-                let _ = responder.send(duration);
-            }
-            PlayerCommand::GetPlaybackState(responder) => {
-                let state = *current_state.read().await;
-                let _ = responder.send(state);
-            }
-        }
-        Ok(())
-    }
-
-    pub async fn get_position(&self) -> Result<u64, ApplicationError> {
-        let (responder, mut receiver) = mpsc::channel(1);
-        self.sender
-            .send(PlayerCommand::GetPosition(responder))
-            .await?;
-        receiver.recv().await.ok_or_else(|| {
-            ApplicationError::DataParsingError("Failed to receive position".to_string())
-        })
-    }
-
-    pub async fn get_duration(&self) -> Result<u64, ApplicationError> {
-        let (responder, mut receiver) = mpsc::channel(1);
-        self.sender
-            .send(PlayerCommand::GetDuration(responder))
-            .await?;
-        receiver.recv().await.ok_or_else(|| {
-            ApplicationError::DataParsingError("Failed to receive duration".to_string())
-        })
-    }
-
-    pub async fn get_playback_state(&self) -> Result<PlayerState, ApplicationError> {
-        let (responder, mut receiver) = mpsc::channel(1);
-        self.sender
-            .send(PlayerCommand::GetPlaybackState(responder))
-            .await?;
-        receiver.recv().await.ok_or_else(|| {
-            ApplicationError::DataParsingError("Failed to receive playback state".to_string())
-        })
-    }
-
-    pub async fn get_playback_info(&self) -> Result<(u64, u64), ApplicationError> {
-        let position = self.get_position().await?;
-        let duration = self.get_duration().await?;
-        Ok((position, duration))
-    }
-
-    async fn play_current_track(&self) -> Result<(), ApplicationError> {
-        let track = get_current_track()?;
-        match fetch_and_verify_audio_url(&self.client, &track.bvid, &track.cid).await {
-            Ok(url) => {
-                info!("Fetched and verified audio URL");
-                set_pipeline_uri_with_headers(&self.pipeline, &url).await?;
-                info!("Starting playback for track: {:?}", track);
-                self.pipeline
-                    .set_state(gstreamer::State::Playing)
-                    .map_err(|_| {
-                        ApplicationError::StateError(
-                            "Failed to set pipeline to Playing".to_string(),
-                        )
-                    })?;
-                Ok(())
-            }
-            Err(e) => {
-                error!("Error fetching and verifying audio URL");
-                let mut state = self.current_state.write().await;
-                *state = PlayerState::Error;
-                Err(ApplicationError::FetchError(e.to_string()))
-            }
-        }
-    }
-
     pub async fn play_playlist(&self) -> Result<(), ApplicationError> {
-        let pipeline_clone = Arc::clone(&self.pipeline);
-        let client_clone = Arc::clone(&self.client);
+        let (sync_sender, mut sync_receiver) = mpsc::channel(32);
+        let pipeline = Arc::clone(&self.pipeline);
+        let client = Arc::clone(&self.client);
         let play_mode = self.play_mode;
 
-        // 创建一个通道发送消息给异步任务
-        let (sync_sender, mut sync_receiver) = mpsc::channel(32);
-
-        // 使用另一个clone用于异步任务
-        let pipeline_async = Arc::clone(&self.pipeline);
-        let client_async = Arc::clone(&self.client);
-
-        // 启动异步任务来处理消息
+        // Spawn a task to handle next track playing
         tokio::spawn(async move {
-            while let Some(_msg) = sync_receiver.recv().await {
-                if let Err(e) = play_next_track(&pipeline_async, &client_async).await {
+            while sync_receiver.recv().await.is_some() {
+                if let Err(e) = play_next_track(&pipeline, &client).await {
                     error!("Failed to play next track: {}", e);
                 }
             }
         });
 
-        // 监听GStreamer消息
+        // Watch GStreamer bus messages
         let sync_sender_clone = sync_sender.clone();
-        let _bus_watch_guard = pipeline_clone
+        let _bus_watch_guard = self
+            .pipeline
             .bus()
-            .unwrap()
+            .ok_or_else(|| {
+                ApplicationError::PipelineError("Failed to get GStreamer bus".to_string())
+            })?
             .add_watch(move |_, msg| {
                 use gstreamer::MessageView;
                 match msg.view() {
@@ -273,8 +91,7 @@ impl AudioPlayer {
                                 return ControlFlow::Break;
                             }
                         }
-
-                        // 发送消息给异步任务播放下一曲目
+                        // Notify to play next track
                         let _ = sync_sender_clone.try_send(());
                     }
                     MessageView::Error(err) => {
@@ -289,7 +106,7 @@ impl AudioPlayer {
                 ApplicationError::PipelineError("Failed to add watch to GStreamer bus".to_string())
             })?;
 
-        play_next_track(&pipeline_clone, &client_clone).await?;
+        play_next_track(&self.pipeline, &self.client).await?;
 
         info!("Starting main loop to keep audio playing...");
         let main_loop = MainLoop::new(None, false);
@@ -301,41 +118,35 @@ impl AudioPlayer {
 }
 
 async fn play_next_track(pipeline: &Pipeline, client: &Client) -> Result<(), ApplicationError> {
-    // 停止pipeline
     pipeline
         .set_state(gstreamer::State::Null)
         .map_err(|_| ApplicationError::StateError("Failed to set pipeline to Null".to_string()))?;
 
-    // 从pipeline中移除所有元素
-    let elements = pipeline.children();
-    for element in elements {
+    // Remove all elements from the pipeline
+    for element in pipeline.children() {
         pipeline.remove(&element).map_err(|_| {
             ApplicationError::ElementError("Failed to remove element from pipeline".to_string())
         })?;
     }
 
-    // 重置pipeline状态
     pipeline
         .set_state(gstreamer::State::Ready)
         .map_err(|_| ApplicationError::StateError("Failed to set pipeline to Ready".to_string()))?;
 
-    // 获取并验证音频URL
     let track = get_current_track()?;
     let url = fetch_and_verify_audio_url(client, &track.bvid, &track.cid).await?;
 
-    // 使用新的音频URL重新配置pipeline
     set_pipeline_uri_with_headers(pipeline, &url).await?;
 
-    // 设置pipeline状态为播放
     pipeline.set_state(gstreamer::State::Playing).map_err(|_| {
         ApplicationError::StateError("Failed to set pipeline to Playing".to_string())
     })?;
     Ok(())
 }
 
-async fn verify_audio_url(client: &Client, url: Cow<'_, str>) -> Result<bool, ApplicationError> {
+async fn verify_audio_url(client: &Client, url: &str) -> Result<bool, ApplicationError> {
     let response = client
-        .get(&*url)
+        .get(url)
         .header(USER_AGENT, "Mozilla/5.0 BiliDroid/..* (bbcallen@gmail.com)")
         .header(ACCEPT, "*/*")
         .header(RANGE, "bytes=0-1024")
@@ -357,32 +168,13 @@ async fn fetch_and_verify_audio_url(
 
     for attempt in 1..=MAX_RETRIES {
         match fetch_audio_url(client, bvid, cid).await {
-            Ok(url) => match verify_audio_url(client, Cow::Owned(url.clone())).await {
-                Ok(is_valid) => {
-                    if is_valid {
-                        return Ok(url);
-                    } else {
-                        error!(
-                            "Audio URL verification failed, attempt {}/{}",
-                            attempt, MAX_RETRIES
-                        );
-                    }
+            Ok(url) => {
+                if verify_audio_url(client, &url).await? {
+                    return Ok(url);
                 }
-                Err(e) => {
-                    error!(
-                        "Error verifying audio URL on attempt {}/{}: {}",
-                        attempt, MAX_RETRIES, e
-                    );
-                }
-            },
-            Err(e) => {
-                error!(
-                    "Error fetching audio URL on attempt {}/{}: {}",
-                    attempt, MAX_RETRIES, e
-                );
             }
+            Err(_) => (),
         }
-
         if attempt < MAX_RETRIES {
             sleep(RETRY_DELAY).await;
         }
@@ -429,8 +221,6 @@ async fn set_pipeline_uri_with_headers(
 
     decodebin.connect_pad_added(move |_, src_pad| {
         if let Some(pipeline) = pipeline_weak.upgrade() {
-            info!("Pad {} added to decodebin", src_pad.name());
-
             let audioconvert = gstreamer::ElementFactory::make("audioconvert")
                 .build()
                 .expect("Failed to create audioconvert element");

@@ -10,10 +10,9 @@ use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use std::fs;
 use std::fs::File;
 use std::path::Path;
-use std::process::Command;
+use sysinfo::{Pid, System};
 
-#[tokio::main]
-async fn main() -> Result<(), ApplicationError> {
+fn main() -> Result<(), ApplicationError> {
     let home_dir = std::env::var("HOME").map_err(|e| {
         ApplicationError::IoError(
             std::io::Error::new(
@@ -58,10 +57,20 @@ async fn main() -> Result<(), ApplicationError> {
 
     // Check if the PID file exists and if the process is running
     if Path::new(pid_file).exists() {
-        if let Ok(pid) = fs::read_to_string(pid_file) {
-            if let Ok(_) = Command::new("kill").arg("-0").arg(pid.trim()).output() {
-                println!("rosesong已经在后台运行");
-                return Ok(());
+        if let Ok(pid_str) = fs::read_to_string(pid_file) {
+            if let Ok(pid) = pid_str.trim().parse::<Pid>() {
+                let mut sys = System::new_all();
+                sys.refresh_processes();
+                if sys.process(pid).is_some() {
+                    println!("rosesong已经在后台运行");
+                    return Ok(());
+                } else {
+                    // Process does not exist, remove the PID file
+                    fs::remove_file(pid_file)?;
+                }
+            } else {
+                // If PID file contains invalid data, remove it
+                fs::remove_file(pid_file)?;
             }
         }
     }
@@ -83,6 +92,12 @@ async fn main() -> Result<(), ApplicationError> {
         }
     }
 
+    // Start the Tokio runtime
+    start_player()
+}
+
+#[tokio::main]
+async fn start_player() -> Result<(), ApplicationError> {
     let play_mode = PlayMode::Loop; // 默认循环播放模式
     let initial_track_index = 0;
 

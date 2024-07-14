@@ -14,16 +14,17 @@ path = "src/cli/cli.rs"
 [dependencies]
 clap = { version = "4.5.8", features = ["derive"] }
 daemonize = "0.5.0"
-gstreamer = "0.22.6"
+flexi_logger = "0.28.5"
 glib = "0.19.9"
-rand = "0.8.5"
+gstreamer = "0.22.6"
 lazy_static = "1.5.0"
+log = "0.4.22"
+rand = "0.8.5"
 reqwest = { version = "0.12.5", features = ["json", "stream"] }
-tokio = { version = "1.38.0", features = ["macros", "sync", "rt", "rt-multi-thread", "time", "signal"] }
-tokio-uds = "0.2.7"
 serde = { version = "1.0.204", features = ["serde_derive"] }
 serde_json = "1.0.120"
+sysinfo = "0.30.13"
 thiserror = "1.0.61"
-log = "0.4.22"
-flexi_logger = "0.28.5"
+tokio = { version = "1.38.0", features = ["macros", "sync", "rt", "rt-multi-thread", "time", "signal"] }
+tokio-uds = "0.2.7"
 toml = "0.8.14"
