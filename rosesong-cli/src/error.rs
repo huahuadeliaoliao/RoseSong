@@ -6,6 +6,7 @@ use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::AcquireError;
 use tokio::task::JoinError;
+use zbus::Error as ZbusError;
 
 #[derive(Error, Debug, Clone)]
 pub enum ApplicationError {
@@ -56,6 +57,9 @@ pub enum ApplicationError {
 
     #[error("GStreamer state error: {0}")]
     StateError(String),
+
+    #[error("ZBus error: {0}")]
+    ZBusError(String),
 }
 
 impl From<reqwest::Error> for ApplicationError {
@@ -111,5 +115,11 @@ impl From<BoolError> for ApplicationError {
         ApplicationError::InitError(
             "Failed to perform an operation on GStreamer pipeline".to_string(),
         )
+    }
+}
+
+impl From<ZbusError> for ApplicationError {
+    fn from(error: ZbusError) -> Self {
+        ApplicationError::ZBusError(error.to_string())
     }
 }

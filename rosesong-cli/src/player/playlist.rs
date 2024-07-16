@@ -57,6 +57,34 @@ impl Playlist {
         }
         Ok(*current_index)
     }
+
+    pub fn move_to_previous_track(
+        &mut self,
+        play_mode: PlayMode,
+    ) -> Result<usize, ApplicationError> {
+        let mut current_index = CURRENT_TRACK_INDEX
+            .lock()
+            .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+        match play_mode {
+            PlayMode::Loop => {
+                if *current_index == 0 {
+                    *current_index = self.tracks.len() - 1;
+                } else {
+                    *current_index -= 1;
+                }
+            }
+            PlayMode::Shuffle => {
+                let mut rng = rand::thread_rng();
+                *current_index = (0..self.tracks.len()).choose(&mut rng).ok_or_else(|| {
+                    ApplicationError::DataParsingError("Failed to choose random track".to_string())
+                })?;
+            }
+            PlayMode::SingleRepeat => {
+                // Do nothing, keep the current index
+            }
+        }
+        Ok(*current_index)
+    }
 }
 
 lazy_static! {
@@ -85,6 +113,14 @@ pub fn move_to_next_track(play_mode: PlayMode) -> Result<usize, ApplicationError
         .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
     let playlist = playlist.as_mut().map_err(|e| e.clone())?;
     playlist.move_to_next_track(play_mode)
+}
+
+pub fn move_to_previous_track(play_mode: PlayMode) -> Result<usize, ApplicationError> {
+    let mut playlist = PLAYLIST
+        .lock()
+        .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+    let playlist = playlist.as_mut().map_err(|e| e.clone())?;
+    playlist.move_to_previous_track(play_mode)
 }
 
 pub fn set_current_track_index(index: usize) -> Result<(), ApplicationError> {

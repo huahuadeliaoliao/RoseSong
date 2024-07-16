@@ -4,15 +4,17 @@ mod player;
 
 use crate::error::ApplicationError;
 use crate::player::playlist::PlayMode;
-use crate::player::AudioPlayer;
-use daemonize::Daemonize;
+use crate::player::{AudioPlayer, PlayerCommand};
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use std::fs;
-use std::fs::File;
 use std::path::Path;
-use sysinfo::{Pid, System};
+use std::sync::Arc;
+use tokio::sync::{mpsc, Mutex, RwLock};
+use zbus::ConnectionBuilder;
+use zbus::{fdo, interface};
 
-fn main() -> Result<(), ApplicationError> {
+#[tokio::main]
+async fn main() -> Result<(), ApplicationError> {
     let home_dir = std::env::var("HOME").map_err(|e| {
         ApplicationError::IoError(
             std::io::Error::new(
@@ -53,56 +55,80 @@ fn main() -> Result<(), ApplicationError> {
         .duplicate_to_stderr(Duplicate::None)
         .start()?;
 
-    let pid_file = "/tmp/rosesong.pid";
+    // Create an unbuffered channel
+    let (tx, rx) = mpsc::channel(64);
+    let rx = Arc::new(Mutex::new(rx));
+    let audio_player = Arc::new(RwLock::new(
+        AudioPlayer::new(PlayMode::Loop, 0, rx.clone()).await?,
+    ));
 
-    // Check if the PID file exists and if the process is running
-    if Path::new(pid_file).exists() {
-        if let Ok(pid_str) = fs::read_to_string(pid_file) {
-            if let Ok(pid) = pid_str.trim().parse::<Pid>() {
-                let mut sys = System::new_all();
-                sys.refresh_processes();
-                if sys.process(pid).is_some() {
-                    println!("rosesong已经在后台运行");
-                    return Ok(());
-                } else {
-                    // Process does not exist, remove the PID file
-                    fs::remove_file(pid_file)?;
-                }
-            } else {
-                // If PID file contains invalid data, remove it
-                fs::remove_file(pid_file)?;
+    // Start the D-Bus service
+    let _connection = ConnectionBuilder::session()?
+        .name("com.rosesong.Player")?
+        .serve_at("/com/rosesong/Player", PlayerDbusService { tx: tx.clone() })?
+        .build()
+        .await?;
+
+    tokio::try_join!(
+        async {
+            audio_player.write().await.play_playlist().await?;
+            Ok::<(), ApplicationError>(())
+        },
+        async {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
+            #[allow(unreachable_code)]
+            Ok::<(), ApplicationError>(())
         }
-    }
-
-    // Daemonize setup
-    let stdout = File::create("/tmp/daemon.out").unwrap();
-    let stderr = File::create("/tmp/daemon.err").unwrap();
-
-    let daemonize = Daemonize::new()
-        .pid_file(pid_file) // Specify the location for the PID file
-        .stdout(stdout) // Redirect stdout to a file
-        .stderr(stderr) // Redirect stderr to a file
-        .chown_pid_file(true); // Change the owner of the PID file to the current user
-
-    match daemonize.start() {
-        Ok(_) => println!("Daemon started successfully"),
-        Err(e) => {
-            eprintln!("Error, {}", e);
-        }
-    }
-
-    // Start the Tokio runtime
-    start_player()
-}
-
-#[tokio::main]
-async fn start_player() -> Result<(), ApplicationError> {
-    let play_mode = PlayMode::Loop; // 默认循环播放模式
-    let initial_track_index = 0;
-
-    let audio_player = AudioPlayer::new(play_mode, initial_track_index).await?;
-    audio_player.play_playlist().await?;
+    )?;
 
     Ok(())
+}
+
+struct PlayerDbusService {
+    tx: mpsc::Sender<PlayerCommand>,
+}
+
+#[interface(name = "com.rosesong.Player")]
+impl PlayerDbusService {
+    async fn play(&self) -> fdo::Result<()> {
+        self.tx
+            .send(PlayerCommand::Play)
+            .await
+            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
+        Ok(())
+    }
+
+    async fn pause(&self) -> fdo::Result<()> {
+        self.tx
+            .send(PlayerCommand::Pause)
+            .await
+            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
+        Ok(())
+    }
+
+    async fn next(&self) -> fdo::Result<()> {
+        self.tx
+            .send(PlayerCommand::Next)
+            .await
+            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
+        Ok(())
+    }
+
+    async fn previous(&self) -> fdo::Result<()> {
+        self.tx
+            .send(PlayerCommand::Previous)
+            .await
+            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
+        Ok(())
+    }
+
+    async fn stop(&self) -> fdo::Result<()> {
+        self.tx
+            .send(PlayerCommand::Stop)
+            .await
+            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
+        Ok(())
+    }
 }
