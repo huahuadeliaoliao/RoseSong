@@ -1,3 +1,4 @@
+// player.rs
 use crate::error::ApplicationError;
 use crate::player::network::{fetch_and_verify_audio_url, set_pipeline_uri_with_headers};
 use crate::player::playlist::{
@@ -11,12 +12,11 @@ use log::{error, info};
 use reqwest::Client;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::task;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PlayerState {
     Stopped,
-    Playing,
-    Paused,
 }
 
 #[derive(Clone, Debug)]
@@ -28,11 +28,10 @@ pub enum PlayerCommand {
     Stop,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AudioPlayer {
     pipeline: Arc<Pipeline>,
     client: Arc<Client>,
-    current_state: Arc<RwLock<PlayerState>>,
     play_mode: PlayMode,
     command_receiver: Arc<Mutex<mpsc::Receiver<PlayerCommand>>>,
 }
@@ -47,7 +46,6 @@ impl AudioPlayer {
         let pipeline = Arc::new(gstreamer::Pipeline::new());
 
         let client = Arc::new(Client::new());
-        let current_state = Arc::new(RwLock::new(PlayerState::Stopped));
 
         set_current_track_index(initial_track_index)?;
 
@@ -55,21 +53,20 @@ impl AudioPlayer {
         Ok(Self {
             pipeline,
             client,
-            current_state,
             play_mode,
             command_receiver,
         })
     }
 
     pub async fn play_playlist(&self) -> Result<(), ApplicationError> {
-        let (sync_sender, mut sync_receiver) = mpsc::channel(32);
+        let (sync_sender, mut sync_receiver) = mpsc::channel(1);
         let pipeline = Arc::clone(&self.pipeline);
         let client = Arc::clone(&self.client);
         let play_mode = self.play_mode;
         let command_receiver = Arc::clone(&self.command_receiver);
 
         // Spawn a task to handle next track playing
-        tokio::spawn({
+        task::spawn({
             let pipeline = Arc::clone(&pipeline);
             let client = Arc::clone(&client);
             async move {
@@ -116,7 +113,7 @@ impl AudioPlayer {
             })?;
 
         // Listen for commands
-        tokio::spawn({
+        task::spawn({
             let pipeline = Arc::clone(&pipeline);
             let client = Arc::clone(&client);
             async move {
@@ -126,15 +123,11 @@ impl AudioPlayer {
                         PlayerCommand::Play => {
                             if let Err(e) = pipeline.set_state(gstreamer::State::Playing) {
                                 error!("Failed to play: {}", e);
-                            } else {
-                                println!("Play command processed"); // Debugging line
                             }
                         }
                         PlayerCommand::Pause => {
                             if let Err(e) = pipeline.set_state(gstreamer::State::Paused) {
                                 error!("Failed to pause: {}", e);
-                            } else {
-                                println!("Pause command processed"); // Debugging line
                             }
                         }
                         PlayerCommand::Next => {
@@ -142,8 +135,6 @@ impl AudioPlayer {
                                 error!("Failed to skip to next track: {}", e);
                             } else if let Err(e) = play_next_track(&pipeline, &client).await {
                                 error!("Failed to play next track: {}", e);
-                            } else {
-                                println!("Next command processed"); // Debugging line
                             }
                         }
                         PlayerCommand::Previous => {
@@ -151,15 +142,11 @@ impl AudioPlayer {
                                 error!("Failed to skip to previous track: {}", e);
                             } else if let Err(e) = play_next_track(&pipeline, &client).await {
                                 error!("Failed to play previous track: {}", e);
-                            } else {
-                                println!("Previous command processed"); // Debugging line
                             }
                         }
                         PlayerCommand::Stop => {
                             if let Err(e) = pipeline.set_state(gstreamer::State::Null) {
                                 error!("Failed to stop: {}", e);
-                            } else {
-                                println!("Stop command processed"); // Debugging line
                             }
                         }
                     }

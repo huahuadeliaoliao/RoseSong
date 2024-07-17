@@ -1682,6 +1682,7 @@ dependencies = [
  "gstreamer",
  "lazy_static",
  "log",
+ "once_cell",
  "rand",
  "reqwest",
  "serde",

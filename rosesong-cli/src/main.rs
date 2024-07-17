@@ -1,17 +1,19 @@
 mod bilibili;
+mod dbus;
 mod error;
 mod player;
 
 use crate::error::ApplicationError;
 use crate::player::playlist::PlayMode;
-use crate::player::{AudioPlayer, PlayerCommand};
+use crate::player::AudioPlayer;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, RwLock};
-use zbus::ConnectionBuilder;
-use zbus::{fdo, interface};
+use tokio::{
+    sync::{mpsc, Mutex},
+    task,
+};
 
 #[tokio::main]
 async fn main() -> Result<(), ApplicationError> {
@@ -55,80 +57,31 @@ async fn main() -> Result<(), ApplicationError> {
         .duplicate_to_stderr(Duplicate::None)
         .start()?;
 
-    // Create an unbuffered channel
-    let (tx, rx) = mpsc::channel(64);
-    let rx = Arc::new(Mutex::new(rx));
-    let audio_player = Arc::new(RwLock::new(
-        AudioPlayer::new(PlayMode::Loop, 0, rx.clone()).await?,
-    ));
-
-    // Start the D-Bus service
-    let _connection = ConnectionBuilder::session()?
-        .name("com.rosesong.Player")?
-        .serve_at("/com/rosesong/Player", PlayerDbusService { tx: tx.clone() })?
-        .build()
-        .await?;
-
-    tokio::try_join!(
-        async {
-            audio_player.write().await.play_playlist().await?;
-            Ok::<(), ApplicationError>(())
-        },
-        async {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-            }
-            #[allow(unreachable_code)]
-            Ok::<(), ApplicationError>(())
-        }
-    )?;
+    // Start the player and dbus listener
+    let _audio_player = start_player_and_dbus_listener().await?;
 
     Ok(())
 }
 
-struct PlayerDbusService {
-    tx: mpsc::Sender<PlayerCommand>,
-}
+async fn start_player_and_dbus_listener() -> Result<AudioPlayer, ApplicationError> {
+    let play_mode = PlayMode::Loop;
+    let initial_track_index = 0;
+    let (command_sender, command_receiver) = mpsc::channel(1);
 
-#[interface(name = "com.rosesong.Player")]
-impl PlayerDbusService {
-    async fn play(&self) -> fdo::Result<()> {
-        self.tx
-            .send(PlayerCommand::Play)
-            .await
-            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
-        Ok(())
-    }
+    let audio_player = AudioPlayer::new(
+        play_mode,
+        initial_track_index,
+        Arc::new(Mutex::new(command_receiver)),
+    )
+    .await?;
+    task::spawn({
+        let command_sender = command_sender.clone();
+        async move {
+            let _ = dbus::run_dbus_server(command_sender).await;
+        }
+    });
 
-    async fn pause(&self) -> fdo::Result<()> {
-        self.tx
-            .send(PlayerCommand::Pause)
-            .await
-            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
-        Ok(())
-    }
+    audio_player.play_playlist().await?;
 
-    async fn next(&self) -> fdo::Result<()> {
-        self.tx
-            .send(PlayerCommand::Next)
-            .await
-            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
-        Ok(())
-    }
-
-    async fn previous(&self) -> fdo::Result<()> {
-        self.tx
-            .send(PlayerCommand::Previous)
-            .await
-            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
-        Ok(())
-    }
-
-    async fn stop(&self) -> fdo::Result<()> {
-        self.tx
-            .send(PlayerCommand::Stop)
-            .await
-            .map_err(|e| fdo::Error::Failed(format!("{}", e)))?;
-        Ok(())
-    }
+    Ok(audio_player)
 }
