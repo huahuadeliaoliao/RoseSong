@@ -1,4 +1,3 @@
-// player.rs
 use crate::error::ApplicationError;
 use crate::player::network::{fetch_and_verify_audio_url, set_pipeline_uri_with_headers};
 use crate::player::playlist::{

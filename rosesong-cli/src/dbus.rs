@@ -1,4 +1,5 @@
-use tokio::sync::mpsc;
+use log::info;
+use tokio::sync::{mpsc, watch};
 use zbus::{fdo, interface, ConnectionBuilder};
 
 use crate::player::PlayerCommand;
@@ -6,6 +7,7 @@ use crate::player::PlayerCommand;
 #[derive(Clone)]
 pub struct PlayerDBus {
     tx: mpsc::Sender<PlayerCommand>,
+    stop_signal: watch::Sender<()>,
 }
 
 #[interface(name = "org.rosesong.Player")]
@@ -32,14 +34,20 @@ impl PlayerDBus {
 
     async fn stop(&self) -> fdo::Result<()> {
         self.tx.send(PlayerCommand::Stop).await.unwrap();
+        self.stop_signal.send(()).unwrap();
+
         Ok(())
     }
 }
 
 pub async fn run_dbus_server(
     command_sender: mpsc::Sender<PlayerCommand>,
+    stop_signal: watch::Sender<()>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let player_dbus = PlayerDBus { tx: command_sender };
+    let player_dbus = PlayerDBus {
+        tx: command_sender,
+        stop_signal: stop_signal.clone(),
+    };
 
     let _connection = ConnectionBuilder::session()?
         .name("org.rosesong.Player")?
@@ -47,7 +55,14 @@ pub async fn run_dbus_server(
         .build()
         .await?;
 
-    loop {
-        tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+    let mut stop_receiver = stop_signal.subscribe();
+
+    // Wait for the stop signal
+    tokio::select! {
+        _ = stop_receiver.changed() => {
+            info!("Stop signal received, shutting down DBus server...");
+        }
     }
+
+    Ok(())
 }

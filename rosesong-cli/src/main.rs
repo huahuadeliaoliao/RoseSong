@@ -9,9 +9,10 @@ use crate::player::AudioPlayer;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use std::fs;
 use std::path::Path;
+use std::process;
 use std::sync::Arc;
 use tokio::{
-    sync::{mpsc, Mutex},
+    sync::{mpsc, watch, Mutex},
     task,
 };
 
@@ -58,12 +59,22 @@ async fn main() -> Result<(), ApplicationError> {
         .start()?;
 
     // Start the player and dbus listener
-    let _audio_player = start_player_and_dbus_listener().await?;
+    let (stop_sender, stop_receiver) = watch::channel(());
+    let _audio_player = start_player_and_dbus_listener(stop_sender).await?;
 
-    Ok(())
+    // Wait for the stop signal
+    wait_for_stop_signal(stop_receiver).await;
+
+    process::exit(0);
 }
 
-async fn start_player_and_dbus_listener() -> Result<AudioPlayer, ApplicationError> {
+async fn wait_for_stop_signal(mut stop_receiver: watch::Receiver<()>) {
+    stop_receiver.changed().await.unwrap();
+}
+
+async fn start_player_and_dbus_listener(
+    stop_signal: watch::Sender<()>,
+) -> Result<AudioPlayer, ApplicationError> {
     let play_mode = PlayMode::Loop;
     let initial_track_index = 0;
     let (command_sender, command_receiver) = mpsc::channel(1);
@@ -74,14 +85,21 @@ async fn start_player_and_dbus_listener() -> Result<AudioPlayer, ApplicationErro
         Arc::new(Mutex::new(command_receiver)),
     )
     .await?;
+
     task::spawn({
         let command_sender = command_sender.clone();
+        let stop_signal = stop_signal.clone();
         async move {
-            let _ = dbus::run_dbus_server(command_sender).await;
+            let _ = dbus::run_dbus_server(command_sender, stop_signal).await;
         }
     });
 
-    audio_player.play_playlist().await?;
+    task::spawn({
+        let audio_player = audio_player.clone();
+        async move {
+            audio_player.play_playlist().await.unwrap();
+        }
+    });
 
     Ok(audio_player)
 }
