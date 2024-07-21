@@ -2,6 +2,7 @@ use log::info;
 use tokio::sync::{mpsc, watch};
 use zbus::{fdo, interface, ConnectionBuilder};
 
+use crate::player::playlist::PlayMode;
 use crate::player::PlayerCommand;
 
 #[derive(Clone)]
@@ -36,6 +37,20 @@ impl PlayerDBus {
         self.tx.send(PlayerCommand::Stop).await.unwrap();
         self.stop_signal.send(()).unwrap();
 
+        Ok(())
+    }
+
+    async fn set_mode(&self, mode: String) -> fdo::Result<()> {
+        let mode = match mode.as_str() {
+            "Loop" => PlayMode::Loop,
+            "Shuffle" => PlayMode::Shuffle,
+            "Repeat" => PlayMode::Repeat,
+            _ => return Err(fdo::Error::Failed("Invalid mode".into())),
+        };
+        self.tx
+            .send(PlayerCommand::SetPlayMode(mode))
+            .await
+            .unwrap();
         Ok(())
     }
 }

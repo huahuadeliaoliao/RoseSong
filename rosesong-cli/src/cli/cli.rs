@@ -1,4 +1,4 @@
-use clap::{Parser, ValueEnum};
+use clap::{Parser, Subcommand};
 use zbus::{proxy, Connection, Result};
 
 #[proxy(
@@ -12,22 +12,34 @@ trait MyPlayer {
     async fn next(&self) -> Result<()>;
     async fn previous(&self) -> Result<()>;
     async fn stop(&self) -> Result<()>;
+    async fn set_mode(&self, mode: &str) -> Result<()>;
 }
 
 #[derive(Parser)]
 #[command(name = "rsg", about = "Control the rosesong player.")]
 struct Cli {
-    #[arg(value_enum)]
+    #[command(subcommand)]
     command: Commands,
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum)]
+#[derive(Subcommand)]
 enum Commands {
     Play,
     Pause,
     Next,
     Previous,
     Stop,
+    Mode(ModeCommand),
+}
+
+#[derive(Parser)]
+struct ModeCommand {
+    #[arg(short = 'l', long = "loop", action = clap::ArgAction::SetTrue, help = "Set mode to Loop")]
+    loop_mode: bool,
+    #[arg(short = 's', long = "shuffle", action = clap::ArgAction::SetTrue, help = "Set mode to Shuffle")]
+    shuffle_mode: bool,
+    #[arg(short = 'r', long = "repeat", action = clap::ArgAction::SetTrue, help = "Set mode to Repeat")]
+    repeat_mode: bool,
 }
 
 #[tokio::main]
@@ -56,6 +68,20 @@ async fn main() -> Result<()> {
         Commands::Stop => {
             proxy.stop().await?;
             println!("Stop command sent");
+        }
+        Commands::Mode(mode_cmd) => {
+            if mode_cmd.loop_mode {
+                proxy.set_mode("Loop").await?;
+                println!("Mode set to Loop");
+            } else if mode_cmd.shuffle_mode {
+                proxy.set_mode("Shuffle").await?;
+                println!("Mode set to Shuffle");
+            } else if mode_cmd.repeat_mode {
+                proxy.set_mode("Repeat").await?;
+                println!("Mode set to Repeat");
+            } else {
+                eprintln!("No valid mode selected");
+            }
         }
     }
 

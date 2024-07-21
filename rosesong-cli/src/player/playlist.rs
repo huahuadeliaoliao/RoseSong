@@ -51,7 +51,7 @@ impl Playlist {
                     ApplicationError::DataParsingError("Failed to choose random track".to_string())
                 })?;
             }
-            PlayMode::SingleRepeat => {
+            PlayMode::Repeat => {
                 // Do nothing, keep the current index
             }
         }
@@ -79,7 +79,7 @@ impl Playlist {
                     ApplicationError::DataParsingError("Failed to choose random track".to_string())
                 })?;
             }
-            PlayMode::SingleRepeat => {
+            PlayMode::Repeat => {
                 // Do nothing, keep the current index
             }
         }
@@ -135,5 +135,5 @@ pub fn set_current_track_index(index: usize) -> Result<(), ApplicationError> {
 pub enum PlayMode {
     Loop,
     Shuffle,
-    SingleRepeat,
+    Repeat,
 }

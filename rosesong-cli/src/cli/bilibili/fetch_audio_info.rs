@@ -1,7 +1,6 @@
 use crate::error::ApplicationError;
 use reqwest::Client;
 use serde::Deserialize;
-use std::time::Duration;
 
 #[derive(Deserialize)]
 struct Owner {

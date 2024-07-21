@@ -11,7 +11,7 @@ use gstreamer::Pipeline;
 use log::{error, info};
 use reqwest::Client;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task;
 
 #[derive(Clone, Debug)]
@@ -21,13 +21,14 @@ pub enum PlayerCommand {
     Next,
     Previous,
     Stop,
+    SetPlayMode(PlayMode),
 }
 
 #[derive(Clone, Debug)]
 pub struct AudioPlayer {
     pipeline: Arc<Pipeline>,
     client: Arc<Client>,
-    play_mode: PlayMode,
+    play_mode: Arc<RwLock<PlayMode>>,
     command_receiver: Arc<Mutex<mpsc::Receiver<PlayerCommand>>>,
     eos_sender: mpsc::Sender<()>,
 }
@@ -48,7 +49,7 @@ impl AudioPlayer {
         let audio_player = Self {
             pipeline,
             client,
-            play_mode,
+            play_mode: Arc::new(RwLock::new(play_mode)), // 初始化RwLock
             command_receiver,
             eos_sender,
         };
@@ -64,14 +65,15 @@ impl AudioPlayer {
     ) -> Result<(), ApplicationError> {
         let pipeline = Arc::clone(&self.pipeline);
         let client = Arc::clone(&self.client);
-        let play_mode = self.play_mode;
+        let play_mode = Arc::clone(&self.play_mode); // 获取RwLock的克隆
 
         task::spawn(async move {
             while let Some(_) = eos_receiver.recv().await {
                 info!("Track finished playing. Handling EOS...");
 
-                if play_mode != PlayMode::SingleRepeat {
-                    if let Err(e) = move_to_next_track(play_mode) {
+                let current_play_mode = *play_mode.read().await; // 读取当前的play_mode
+                if current_play_mode != PlayMode::Repeat {
+                    if let Err(e) = move_to_next_track(current_play_mode) {
                         error!("Error moving to next track: {}", e);
                         continue;
                     }
@@ -89,7 +91,7 @@ impl AudioPlayer {
     pub async fn play_playlist(&self) -> Result<(), ApplicationError> {
         let pipeline = Arc::clone(&self.pipeline);
         let client = Arc::clone(&self.client);
-        let play_mode = self.play_mode;
+        let play_mode = Arc::clone(&self.play_mode); // 获取RwLock的克隆
         let command_receiver = Arc::clone(&self.command_receiver);
         let eos_sender = self.eos_sender.clone();
 
@@ -136,10 +138,11 @@ impl AudioPlayer {
                                     }
                                 }
                                 PlayerCommand::Next => {
-                                    let mode = if play_mode == PlayMode::SingleRepeat {
+                                    let current_play_mode = *play_mode.read().await; // 读取当前的play_mode
+                                    let mode = if current_play_mode == PlayMode::Repeat {
                                         PlayMode::Loop
                                     } else {
-                                        play_mode
+                                        current_play_mode
                                     };
                                     if let Err(e) = move_to_next_track(mode) {
                                         error!("Failed to skip to next track: {}", e);
@@ -148,10 +151,11 @@ impl AudioPlayer {
                                     }
                                 }
                                 PlayerCommand::Previous => {
-                                    let mode = if play_mode == PlayMode::SingleRepeat {
+                                    let current_play_mode = *play_mode.read().await;
+                                    let mode = if current_play_mode == PlayMode::Repeat {
                                         PlayMode::Loop
                                     } else {
-                                        play_mode
+                                        current_play_mode
                                     };
                                     if let Err(e) = move_to_previous_track(mode) {
                                         error!("Failed to skip to previous track: {}", e);
@@ -163,6 +167,10 @@ impl AudioPlayer {
                                     if let Err(e) = pipeline.set_state(gstreamer::State::Null) {
                                         error!("Failed to stop: {}", e);
                                     }
+                                }
+                                PlayerCommand::SetPlayMode(new_mode) => {
+                                    let mut write_guard = play_mode.write().await; // 写入新的play_mode
+                                    *write_guard = new_mode;
                                 }
                             }
                         }
