@@ -10,7 +10,7 @@ pub async fn fetch_audio_url(
     cid: &str,
 ) -> Result<String, ApplicationError> {
     let url = format!("{}&bvid={}&cid={}", BASE_API_URL, bvid, cid);
-    log::info!("Fetching audio URL: {url}");
+    log::info!("Fetching audio URL");
     let response = client.get(&url).send().await?;
     let json: Value = response.json().await?;
     json["data"]["dash"]["audio"][0]["baseUrl"]

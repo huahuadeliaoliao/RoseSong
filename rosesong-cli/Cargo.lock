@@ -1678,6 +1678,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "flexi_logger",
+ "futures-util",
  "glib",
  "gstreamer",
  "lazy_static",
