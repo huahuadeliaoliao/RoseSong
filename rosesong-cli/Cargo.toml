@@ -5,11 +5,11 @@ edition = "2021"
 
 [[bin]]
 name = "rosesong"
-path = "src/main.rs"
+path = "rosesong/main.rs"
 
 [[bin]]
 name = "rsg"
-path = "src/cli/cli.rs"
+path = "rsg/cli.rs"
 
 [dependencies]
 clap = { version = "4.5.9", features = ["derive"] }
