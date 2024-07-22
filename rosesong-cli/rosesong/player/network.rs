@@ -28,20 +28,30 @@ pub async fn fetch_and_verify_audio_url(
     bvid: &str,
     cid: &str,
 ) -> Result<String, ApplicationError> {
-    const MAX_RETRIES: u32 = 10;
-    const RETRY_DELAY: Duration = Duration::from_secs(3);
+    const MAX_RETRIES: u32 = 3;
+    const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
+    let mut retry_delay = INITIAL_RETRY_DELAY;
 
     for attempt in 1..=MAX_RETRIES {
         match fetch_audio_url(client, bvid, cid).await {
-            Ok(url) => {
-                if verify_audio_url(client, &url).await? {
-                    return Ok(url);
+            Ok(url) => match verify_audio_url(client, &url).await {
+                Ok(true) => return Ok(url),
+                Ok(false) => {
+                    info!("Verification failed for URL: {}", url);
                 }
+                Err(e) => {
+                    error!("Error verifying URL: {}", e);
+                }
+            },
+            Err(e) => {
+                error!("Error fetching audio URL: {}", e);
             }
-            Err(_) => (),
         }
         if attempt < MAX_RETRIES {
-            sleep(RETRY_DELAY).await;
+            info!("Retrying... Attempt {}/{}", attempt, MAX_RETRIES);
+            sleep(retry_delay).await;
+            // Exponential backoff
+            retry_delay *= 2;
         }
     }
 

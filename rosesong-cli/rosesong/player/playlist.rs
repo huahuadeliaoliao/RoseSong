@@ -10,8 +10,6 @@ use std::sync::Mutex;
 pub struct Track {
     pub bvid: String,
     pub cid: String,
-    pub title: Option<String>,
-    pub owner: Option<String>,
 }
 
 #[derive(Deserialize, Clone, Debug)]

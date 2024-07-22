@@ -49,7 +49,7 @@ impl AudioPlayer {
         let audio_player = Self {
             pipeline,
             client,
-            play_mode: Arc::new(RwLock::new(play_mode)), // 初始化RwLock
+            play_mode: Arc::new(RwLock::new(play_mode)),
             command_receiver,
             eos_sender,
         };
@@ -65,13 +65,13 @@ impl AudioPlayer {
     ) -> Result<(), ApplicationError> {
         let pipeline = Arc::clone(&self.pipeline);
         let client = Arc::clone(&self.client);
-        let play_mode = Arc::clone(&self.play_mode); // 获取RwLock的克隆
+        let play_mode = Arc::clone(&self.play_mode);
 
         task::spawn(async move {
             while let Some(_) = eos_receiver.recv().await {
                 info!("Track finished playing. Handling EOS...");
 
-                let current_play_mode = *play_mode.read().await; // 读取当前的play_mode
+                let current_play_mode = *play_mode.read().await;
                 if current_play_mode != PlayMode::Repeat {
                     if let Err(e) = move_to_next_track(current_play_mode) {
                         error!("Error moving to next track: {}", e);

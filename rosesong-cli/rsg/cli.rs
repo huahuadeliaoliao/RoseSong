@@ -132,7 +132,6 @@ async fn initialize_directories() -> StdResult<String, ApplicationError> {
 
     // Define the required directories
     let required_dirs = [
-        format!("{}/.config/rosesong/logs", home_dir),
         format!("{}/.config/rosesong/favorites", home_dir),
         format!("{}/.config/rosesong/playlists", home_dir),
         format!("{}/.config/rosesong/settings", home_dir),
@@ -183,7 +182,7 @@ async fn import_favorite(fid: String) -> StdResult<(), ApplicationError> {
     for video_data in video_data_list {
         tracks.push(Track {
             bvid: video_data.bvid.clone(),
-            cid: video_data.cid.clone(),
+            cid: video_data.cid.to_string().clone(),
             title: video_data.title.clone(),
             owner: video_data.owner.name.clone(),
         });

@@ -11,7 +11,7 @@ pub struct Owner {
 pub struct VideoData {
     pub bvid: String,
     pub title: String,
-    pub cid: String,
+    pub cid: i64,
     pub owner: Owner,
 }
 
