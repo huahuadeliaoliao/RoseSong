@@ -79,7 +79,7 @@ impl AudioPlayer {
                     }
                 }
 
-                if let Err(e) = play_next_track(&pipeline, &client).await {
+                if let Err(e) = play_track(&pipeline, &client).await {
                     error!("Failed to play next track: {}", e);
                 }
             }
@@ -146,7 +146,7 @@ impl AudioPlayer {
                                     };
                                     if let Err(e) = move_to_next_track(mode) {
                                         error!("Failed to skip to next track: {}", e);
-                                    } else if let Err(e) = play_next_track(&pipeline, &client).await {
+                                    } else if let Err(e) = play_track(&pipeline, &client).await {
                                         error!("Failed to play next track: {}", e);
                                     }
                                 }
@@ -159,7 +159,7 @@ impl AudioPlayer {
                                     };
                                     if let Err(e) = move_to_previous_track(mode) {
                                         error!("Failed to skip to previous track: {}", e);
-                                    } else if let Err(e) = play_next_track(&pipeline, &client).await {
+                                    } else if let Err(e) = play_track(&pipeline, &client).await {
                                         error!("Failed to play previous track: {}", e);
                                     }
                                 }
@@ -180,12 +180,12 @@ impl AudioPlayer {
             }
         });
 
-        play_next_track(&self.pipeline, &self.client).await?;
+        play_track(&self.pipeline, &self.client).await?;
         Ok(())
     }
 }
 
-async fn play_next_track(pipeline: &Pipeline, client: &Client) -> Result<(), ApplicationError> {
+async fn play_track(pipeline: &Pipeline, client: &Client) -> Result<(), ApplicationError> {
     pipeline
         .set_state(gstreamer::State::Null)
         .map_err(|_| ApplicationError::StateError("Failed to set pipeline to Null".to_string()))?;

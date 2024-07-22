@@ -3,15 +3,16 @@ use reqwest::Client;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
-struct Owner {
-    name: String,
+pub struct Owner {
+    pub name: String,
 }
 
 #[derive(Deserialize)]
-struct VideoData {
-    title: String,
-    cid: i64,
-    owner: Owner,
+pub struct VideoData {
+    pub bvid: String,
+    pub title: String,
+    pub cid: String,
+    pub owner: Owner,
 }
 
 #[derive(Deserialize)]
@@ -19,44 +20,60 @@ struct ApiResponse<T> {
     data: T,
 }
 
-async fn fetch_video_data(client: &Client, bvid: &str) -> Result<VideoData, ApplicationError> {
+pub async fn fetch_video_data(client: &Client, bvid: &str) -> Result<VideoData, ApplicationError> {
     let url = format!(
         "https://api.bilibili.com/x/web-interface/view?bvid={}",
         bvid
     );
-    let response = client.get(&url).send().await?;
-    let api_response: ApiResponse<VideoData> = response.json().await?;
+    let response = client.get(&url).send().await.map_err(|e| {
+        eprintln!("Failed to send request to {}: {}", url, e);
+        ApplicationError::HttpRequest(e)
+    })?;
+    let mut api_response: ApiResponse<VideoData> = response.json().await.map_err(|e| {
+        eprintln!("Failed to parse response from {}: {}", url, e);
+        ApplicationError::HttpRequest(e)
+    })?;
+    api_response.data.bvid = bvid.to_string();
     Ok(api_response.data)
 }
 
-async fn fetch_bvids_from_media_id(
+pub async fn fetch_bvids_from_fid(
     client: &Client,
-    media_id: &str,
+    fid: &str,
 ) -> Result<Vec<String>, ApplicationError> {
     let url = format!(
         "https://api.bilibili.com/x/v3/fav/resource/ids?media_id={}",
-        media_id
+        fid
     );
-    let response = client.get(&url).send().await?;
-    let json: serde_json::Value = response.json().await?;
+    let response = client.get(&url).send().await.map_err(|e| {
+        eprintln!("Failed to send request to {}: {}", url, e);
+        ApplicationError::HttpRequest(e)
+    })?;
+    let json: serde_json::Value = response.json().await.map_err(|e| {
+        eprintln!("Failed to parse response from {}: {}", url, e);
+        ApplicationError::HttpRequest(e)
+    })?;
     let bvids = json["data"]
         .as_array()
-        .ok_or_else(|| ApplicationError::DataParsingError("数据中缺少 bvids 数组".to_string()))?
+        .ok_or_else(|| {
+            eprintln!("Failed to find 'data' array in response from {}", url);
+            ApplicationError::DataParsingError("数据中缺少 bvids 数组".to_string())
+        })?
         .iter()
         .filter_map(|v| v["bvid"].as_str().map(String::from))
         .collect();
     Ok(bvids)
 }
 
-async fn get_video_data(
+pub async fn get_video_data(
     client: &Client,
-    media_id: Option<&str>,
+    fid: Option<&str>,
     bvid: Option<&str>,
 ) -> Result<Vec<VideoData>, ApplicationError> {
     let mut video_data_list = Vec::new();
 
-    if let Some(media_id) = media_id {
-        let bvids = fetch_bvids_from_media_id(client, media_id).await?;
+    if let Some(fid) = fid {
+        let bvids = fetch_bvids_from_fid(client, fid).await?;
         for bvid in bvids {
             let video_data = fetch_video_data(client, &bvid).await?;
             video_data_list.push(video_data);
@@ -65,8 +82,8 @@ async fn get_video_data(
         let video_data = fetch_video_data(client, bvid).await?;
         video_data_list.push(video_data);
     } else {
-        return Err(ApplicationError::DataParsingError(
-            "请提供 media_id 或 bvid".to_string(),
+        return Err(ApplicationError::InvalidInput(
+            "请提供 fid 或 bvid".to_string(),
         ));
     }
 
