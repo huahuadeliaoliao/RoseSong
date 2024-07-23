@@ -1,19 +1,16 @@
 mod bilibili;
 mod error;
 
-use bilibili::fetch_audio_info::{fetch_video_data, get_video_data};
+use bilibili::fetch_audio_info::get_video_data;
 use clap::{Parser, Subcommand};
 use error::ApplicationError;
-use serde::Serialize;
-use std::fs;
+use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
-use tokio::io::AsyncBufReadExt;
-use tokio::sync::oneshot;
-use tokio::task;
+use std::{collections::HashSet, fs};
 use zbus::{proxy, Connection};
 
-type StdResult<T, E> = std::result::Result<T, E>; // Alias for std::result::Result
+type StdResult<T, E> = std::result::Result<T, E>;
 
 #[proxy(
     interface = "org.rosesong.Player",
@@ -49,21 +46,23 @@ enum Commands {
 
 #[derive(Parser)]
 struct ModeCommand {
-    #[arg(short = 'l', long = "loop", action = clap::ArgAction::SetTrue, help = "Set mode to Loop")]
+    #[arg(short = 'l', long = "loop", action = clap::ArgAction::SetTrue, help = "Set playmode to Loop")]
     loop_mode: bool,
-    #[arg(short = 's', long = "shuffle", action = clap::ArgAction::SetTrue, help = "Set mode to Shuffle")]
+    #[arg(short = 's', long = "shuffle", action = clap::ArgAction::SetTrue, help = "Set playmode to Shuffle")]
     shuffle_mode: bool,
-    #[arg(short = 'r', long = "repeat", action = clap::ArgAction::SetTrue, help = "Set mode to Repeat")]
+    #[arg(short = 'r', long = "repeat", action = clap::ArgAction::SetTrue, help = "Set playmode to Repeat")]
     repeat_mode: bool,
 }
 
 #[derive(Parser)]
 struct ImportCommand {
     #[arg(short = 'f', long = "fid", help = "The favorite ID to import")]
-    fid: String,
+    fid: Option<String>,
+    #[arg(short = 'b', long = "bvid", help = "The bvid to import")]
+    bvid: Option<String>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct Track {
     bvid: String,
     cid: String,
@@ -71,7 +70,7 @@ struct Track {
     owner: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct Favorite {
     tracks: Vec<Track>,
 }
@@ -118,8 +117,8 @@ async fn main() -> StdResult<(), Box<dyn std::error::Error>> {
             }
         }
         Commands::Import(import_cmd) => {
-            if let Err(e) = import_favorite(import_cmd.fid).await {
-                eprintln!("Error importing favorite: {}", e);
+            if let Err(e) = import_favorite(import_cmd.fid, import_cmd.bvid).await {
+                eprintln!("导入出现错误: {}", e);
             }
         }
     }
@@ -132,7 +131,6 @@ async fn initialize_directories() -> StdResult<String, ApplicationError> {
 
     // Define the required directories
     let required_dirs = [
-        format!("{}/.config/rosesong/favorites", home_dir),
         format!("{}/.config/rosesong/playlists", home_dir),
         format!("{}/.config/rosesong/settings", home_dir),
     ];
@@ -148,39 +146,25 @@ async fn initialize_directories() -> StdResult<String, ApplicationError> {
         fs::write(&playlist_path, "")?;
     }
 
-    Ok(format!("{}/.config/rosesong/favorites", home_dir))
+    Ok(format!("{}/.config/rosesong/playlists", home_dir))
 }
 
-async fn import_favorite(fid: String) -> StdResult<(), ApplicationError> {
+async fn import_favorite(
+    fid: Option<String>,
+    bvid: Option<String>,
+) -> StdResult<(), ApplicationError> {
     let client = reqwest::Client::new();
 
-    let favorites_dir = initialize_directories().await?;
+    // Initialize directories and get the playlist directory
+    let playlist_path = initialize_directories().await?.clone() + "/playlist.toml";
 
-    let (tx, rx) = oneshot::channel();
-    let _input_handle = task::spawn(async move {
-        println!("Please enter a name for the favorite:");
-        let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
-        let mut favorite_name = String::new();
-        reader
-            .read_line(&mut favorite_name)
-            .await
-            .map_err(ApplicationError::Io)?;
-        let favorite_name = favorite_name.trim().to_string();
-        tx.send(favorite_name).map_err(|_| {
-            ApplicationError::InvalidInput("Failed to send through oneshot channel".to_string())
-        })
-    });
+    println!("正在获取相关信息");
 
-    let fetch_handle = task::spawn(async move { get_video_data(&client, Some(&fid), None).await });
+    let video_data_list = get_video_data(&client, fid.as_deref(), bvid.as_deref()).await?;
 
-    let favorite_name = rx.await.map_err(ApplicationError::OneshotRecvError)?;
-    let video_data_list = fetch_handle
-        .await
-        .map_err(|e| ApplicationError::Io(e.into()))??;
-
-    let mut tracks = Vec::new();
+    let mut new_tracks = Vec::new();
     for video_data in video_data_list {
-        tracks.push(Track {
+        new_tracks.push(Track {
             bvid: video_data.bvid.clone(),
             cid: video_data.cid.to_string().clone(),
             title: video_data.title.clone(),
@@ -188,18 +172,49 @@ async fn import_favorite(fid: String) -> StdResult<(), ApplicationError> {
         });
     }
 
-    let favorite = Favorite { tracks };
+    // Read existing content from playlist.toml if it exists
+    let mut existing_tracks = if Path::new(&playlist_path).exists() {
+        let content = fs::read_to_string(&playlist_path).map_err(ApplicationError::Io)?;
+        toml::from_str::<Favorite>(&content)
+            .map(|favorite| favorite.tracks)
+            .unwrap_or_else(|_| Vec::new())
+    } else {
+        Vec::new()
+    };
 
+    // Create a set of existing bvids for easy lookup
+    let existing_bvids: HashSet<_> = existing_tracks
+        .iter()
+        .map(|track| track.bvid.clone())
+        .collect();
+
+    // Update existing tracks with new tracks
+    for track in existing_tracks.iter_mut() {
+        if let Some(new_track) = new_tracks.iter().find(|t| t.bvid == track.bvid) {
+            *track = new_track.clone();
+        }
+    }
+
+    // Append new tracks that do not exist in the existing tracks
+    for new_track in new_tracks {
+        if !existing_bvids.contains(&new_track.bvid) {
+            existing_tracks.push(new_track);
+        }
+    }
+
+    let favorite = Favorite {
+        tracks: existing_tracks,
+    };
+
+    // Serialize to TOML and write to playlist.toml
     let toml_content = toml::to_string(&favorite).map_err(|_| {
         ApplicationError::DataParsingError("Failed to serialize tracks to TOML".to_string())
     })?;
-
-    let file_path = format!("{}/{}.toml", favorites_dir, favorite_name);
-    let mut file = fs::File::create(file_path).map_err(ApplicationError::Io)?;
+    let mut file = fs::File::create(&playlist_path).map_err(ApplicationError::Io)?;
     file.write_all(toml_content.as_bytes())
         .map_err(ApplicationError::Io)?;
 
-    println!("Favorite imported successfully");
+    println!("导入成功");
 
     Ok(())
 }

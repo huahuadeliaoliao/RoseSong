@@ -31,7 +31,6 @@ async fn main() -> Result<(), ApplicationError> {
     // Define the required directories
     let required_dirs = [
         format!("{}/.config/rosesong/logs", home_dir),
-        format!("{}/.config/rosesong/favorites", home_dir),
         format!("{}/.config/rosesong/playlists", home_dir),
         format!("{}/.config/rosesong/settings", home_dir),
     ];

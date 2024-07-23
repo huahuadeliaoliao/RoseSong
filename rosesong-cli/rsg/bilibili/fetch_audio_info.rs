@@ -83,7 +83,7 @@ pub async fn get_video_data(
         video_data_list.push(video_data);
     } else {
         return Err(ApplicationError::InvalidInput(
-            "请提供 fid 或 bvid".to_string(),
+            "请提供正确的 fid 或 bvid".to_string(),
         ));
     }
 
