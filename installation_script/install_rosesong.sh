@@ -30,6 +30,7 @@ curl -L $RSG_URL -o "$DESTINATION/rsg"
 # 给予rsg文件执行权限
 echo "为 rsg 设置执行权限..."
 chmod +x "$DESTINATION/rsg"
+chmod +x "$DESTINATION/rosesong"
 
 # 检查rsg是否成功安装
 if [ -f "$DESTINATION/rsg" ]; then
