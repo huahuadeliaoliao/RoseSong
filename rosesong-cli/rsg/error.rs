@@ -1,6 +1,7 @@
 use reqwest::Error as ReqwestError;
 use std::io::Error as IoError;
 use thiserror::Error;
+use zbus::Error as ZbusError;
 
 #[derive(Error, Debug)]
 pub enum ApplicationError {
@@ -18,4 +19,6 @@ pub enum ApplicationError {
     Utf8Conversion(#[from] std::string::FromUtf8Error),
     #[error("Oneshot channel receive error")]
     OneshotRecvError(#[from] tokio::sync::oneshot::error::RecvError),
+    #[error("Zbus error")]
+    Zbus(#[from] ZbusError),
 }

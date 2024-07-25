@@ -2,15 +2,18 @@ mod bilibili;
 mod dbus;
 mod error;
 mod player;
+mod temp_dbus;
 
 use crate::error::ApplicationError;
 use crate::player::playlist::PlayMode;
 use crate::player::AudioPlayer;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
-use std::fs;
+use log::{error, warn};
+use player::playlist::load_playlist;
 use std::path::Path;
 use std::process;
 use std::sync::Arc;
+use tokio::fs;
 use tokio::{
     sync::{mpsc, watch, Mutex},
     task,
@@ -32,18 +35,17 @@ async fn main() -> Result<(), ApplicationError> {
     let required_dirs = [
         format!("{}/.config/rosesong/logs", home_dir),
         format!("{}/.config/rosesong/playlists", home_dir),
-        format!("{}/.config/rosesong/settings", home_dir),
     ];
 
     // Ensure all directories exist
     for dir in &required_dirs {
-        fs::create_dir_all(dir)?;
+        fs::create_dir_all(dir).await?;
     }
 
     // Check if playlist.toml exists, if not, create an empty one
     let playlist_path = format!("{}/.config/rosesong/playlists/playlist.toml", home_dir);
     if !Path::new(&playlist_path).exists() {
-        fs::write(&playlist_path, "")?;
+        fs::write(&playlist_path, "").await?;
     }
 
     // Logger setup
@@ -57,18 +59,51 @@ async fn main() -> Result<(), ApplicationError> {
         .duplicate_to_stderr(Duplicate::None)
         .start()?;
 
-    // Start the player and dbus listener
+    // Check if the playlist is empty
+    {
+        let playlist_content = fs::read_to_string(&playlist_path).await?;
+        if playlist_content.trim().is_empty() {
+            warn!("Current playlist is empty");
+            let (stop_sender, stop_receiver) = watch::channel(());
+            let _ = start_temp_dbus_listener(stop_sender).await;
+            wait_for_stop_signal(stop_receiver).await;
+            let playlist_content = fs::read_to_string(&playlist_path).await?;
+            if playlist_content.trim().is_empty() {
+                process::exit(0);
+            }
+        }
+    }
+
+    load_playlist(&playlist_path).await?;
     let (stop_sender, stop_receiver) = watch::channel(());
     let _audio_player = start_player_and_dbus_listener(stop_sender).await?;
-
-    // Wait for the stop signal
     wait_for_stop_signal(stop_receiver).await;
-
     process::exit(0);
 }
 
 async fn wait_for_stop_signal(mut stop_receiver: watch::Receiver<()>) {
     stop_receiver.changed().await.unwrap();
+}
+
+async fn start_temp_dbus_listener(
+    stop_signal: watch::Sender<()>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let stop_receiver = stop_signal.subscribe();
+
+    task::spawn({
+        let stop_signal = stop_signal.clone();
+        async move {
+            let result = temp_dbus::run_temp_dbus_server(stop_signal).await;
+            if let Err(e) = result {
+                error!("Temp DBus listener error: {}", e);
+            }
+        }
+    });
+
+    // Wait for the stop signal
+    wait_for_stop_signal(stop_receiver).await;
+
+    Ok(())
 }
 
 async fn start_player_and_dbus_listener(

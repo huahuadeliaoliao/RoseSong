@@ -53,7 +53,7 @@ pub async fn fetch_bvids_from_fid(
         eprintln!("Failed to parse response from {}: {}", url, e);
         ApplicationError::HttpRequest(e)
     })?;
-    let bvids = json["data"]
+    let bvids: Vec<String> = json["data"]
         .as_array()
         .ok_or_else(|| {
             eprintln!("Failed to find 'data' array in response from {}", url);
@@ -62,6 +62,13 @@ pub async fn fetch_bvids_from_fid(
         .iter()
         .filter_map(|v| v["bvid"].as_str().map(String::from))
         .collect();
+
+    if bvids.is_empty() {
+        return Err(ApplicationError::InvalidInput(
+            "提供的 fid 无效或没有找到相关的视频".to_string(),
+        ));
+    }
+
     Ok(bvids)
 }
 
@@ -84,6 +91,12 @@ pub async fn get_video_data(
     } else {
         return Err(ApplicationError::InvalidInput(
             "请提供正确的 fid 或 bvid".to_string(),
+        ));
+    }
+
+    if video_data_list.is_empty() {
+        return Err(ApplicationError::InvalidInput(
+            "提供的 fid 或 bvid 无效或没有找到相关的视频".to_string(),
         ));
     }
 

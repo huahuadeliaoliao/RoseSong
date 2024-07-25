@@ -43,9 +43,6 @@ pub enum ApplicationError {
     #[error("Channel send error: {0}")]
     SendError(String),
 
-    #[error("Mutex lock error: {0}")]
-    MutexLockError(String),
-
     #[error("GStreamer element error: {0}")]
     ElementError(String),
 

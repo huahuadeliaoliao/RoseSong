@@ -1,7 +1,9 @@
 [package]
-name = "roseplayer_cli"
-version = "0.1.0"
+name = "rosesong"
+version = "1.0.0"
 edition = "2021"
+authors = ["Florian Liao <huahuadeliaoliao@icloud.com>"]
+description = "Command line player built by rust based on gstreamer decoding and playing bilibili audio, using dbus for inter-process communication."
 
 [[bin]]
 name = "rosesong"
@@ -11,13 +13,15 @@ path = "rosesong/main.rs"
 name = "rsg"
 path = "rsg/cli.rs"
 
+[profile.release]
+lto = true
+
 [dependencies]
 clap = { version = "4.5.9", features = ["derive"] }
 flexi_logger = "0.28.5"
 futures-util = "0.3.30"
 glib = "0.19.9"
 gstreamer = "0.22.6"
-lazy_static = "1.5.0"
 log = "0.4.22"
 once_cell = "1.19.0"
 rand = "0.8.5"
@@ -33,6 +37,12 @@ tokio = { version = "1.38.0", features = [
     "time",
     "signal",
 ] }
-tokio-uds = "0.2.7"
 toml = "0.8.14"
 zbus = { version = "4.3.1", default-features = false, features = ["tokio"] }
+
+[package.metadata.deb]
+maintainer = "Florian Liao <huahuadeliaoliao@icloud.com>"
+extended-description = "Command line player built by rust based on gstreamer decoding and playing bilibili audio, using dbus for inter-process communication."
+depends = "libc6, libgstreamer1.0-0, libglib2.0-0, libssl-dev, libdbus-1-3, libdbus-glib-1-2"
+section = "sound"
+priority = "optional"

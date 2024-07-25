@@ -1,10 +1,8 @@
 use crate::error::ApplicationError;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
 use rand::seq::IteratorRandom;
 use serde::Deserialize;
-use std::fs;
-use std::process;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 #[derive(Deserialize, Clone, Debug)]
 pub struct Track {
@@ -18,27 +16,27 @@ pub struct Playlist {
 }
 
 impl Playlist {
-    pub fn load_from_file(file_path: &str) -> Result<Self, ApplicationError> {
-        log::info!("Loading playlist from file: {}", file_path);
-        let content = fs::read_to_string(file_path)?;
-        if content.trim().is_empty() {
-            log::error!("Current playlist is empty");
-            process::exit(1);
-        }
+    pub async fn load_from_file(file_path: &str) -> Result<Self, ApplicationError> {
+        log::info!("Loading playlist");
+        let content = tokio::fs::read_to_string(file_path).await?;
         let playlist: Playlist = toml::from_str(&content)?;
         Ok(playlist)
     }
 
-    pub fn get_current_track(&self, index: usize) -> Result<&Track, ApplicationError> {
-        self.tracks.get(index).ok_or_else(|| {
-            ApplicationError::DataParsingError("Track index out of bounds".to_string())
-        })
+    pub async fn get_current_track(&self, index: usize) -> Result<Track, ApplicationError> {
+        self.tracks
+            .get(index)
+            .cloned() // Clone the Track to return an owned value
+            .ok_or_else(|| {
+                ApplicationError::DataParsingError("Track index out of bounds".to_string())
+            })
     }
 
-    pub fn move_to_next_track(&mut self, play_mode: PlayMode) -> Result<usize, ApplicationError> {
-        let mut current_index = CURRENT_TRACK_INDEX
-            .lock()
-            .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+    pub async fn move_to_next_track(
+        &mut self,
+        play_mode: PlayMode,
+    ) -> Result<usize, ApplicationError> {
+        let mut current_index = CURRENT_TRACK_INDEX.lock().await;
         match play_mode {
             PlayMode::Loop => {
                 *current_index = (*current_index + 1) % self.tracks.len();
@@ -56,13 +54,11 @@ impl Playlist {
         Ok(*current_index)
     }
 
-    pub fn move_to_previous_track(
+    pub async fn move_to_previous_track(
         &mut self,
         play_mode: PlayMode,
     ) -> Result<usize, ApplicationError> {
-        let mut current_index = CURRENT_TRACK_INDEX
-            .lock()
-            .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+        let mut current_index = CURRENT_TRACK_INDEX.lock().await;
         match play_mode {
             PlayMode::Loop => {
                 if *current_index == 0 {
@@ -83,48 +79,44 @@ impl Playlist {
         }
         Ok(*current_index)
     }
+
+    pub async fn find_track_index(&self, bvid: &str) -> Option<usize> {
+        self.tracks.iter().position(|track| track.bvid == bvid)
+    }
 }
 
-lazy_static! {
-    pub static ref PLAYLIST: Mutex<Result<Playlist, ApplicationError>> =
-        Mutex::new(Playlist::load_from_file(&format!(
-            "{}/.config/rosesong/playlists/playlist.toml",
-            std::env::var("HOME").expect("Failed to get HOME environment variable")
-        )));
-    pub static ref CURRENT_TRACK_INDEX: Mutex<usize> = Mutex::new(0);
+pub static PLAYLIST: Lazy<Mutex<Result<Playlist, ApplicationError>>> =
+    Lazy::new(|| Mutex::new(Ok(Playlist { tracks: Vec::new() })));
+pub static CURRENT_TRACK_INDEX: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+
+pub async fn load_playlist(file_path: &str) -> Result<(), ApplicationError> {
+    let playlist = Playlist::load_from_file(file_path).await?;
+    let mut playlist_lock = PLAYLIST.lock().await;
+    *playlist_lock = Ok(playlist); // Replace the old playlist with the new one
+    Ok(())
 }
 
-pub fn get_current_track() -> Result<Track, ApplicationError> {
-    let playlist = PLAYLIST
-        .lock()
-        .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+pub async fn get_current_track() -> Result<Track, ApplicationError> {
+    let playlist = PLAYLIST.lock().await;
     let playlist = playlist.as_ref().map_err(|e| e.clone())?;
-    let index = *CURRENT_TRACK_INDEX
-        .lock()
-        .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
-    playlist.get_current_track(index).cloned()
+    let index = *CURRENT_TRACK_INDEX.lock().await;
+    playlist.get_current_track(index).await
 }
 
-pub fn move_to_next_track(play_mode: PlayMode) -> Result<usize, ApplicationError> {
-    let mut playlist = PLAYLIST
-        .lock()
-        .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+pub async fn move_to_next_track(play_mode: PlayMode) -> Result<usize, ApplicationError> {
+    let mut playlist = PLAYLIST.lock().await;
     let playlist = playlist.as_mut().map_err(|e| e.clone())?;
-    playlist.move_to_next_track(play_mode)
+    playlist.move_to_next_track(play_mode).await
 }
 
-pub fn move_to_previous_track(play_mode: PlayMode) -> Result<usize, ApplicationError> {
-    let mut playlist = PLAYLIST
-        .lock()
-        .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+pub async fn move_to_previous_track(play_mode: PlayMode) -> Result<usize, ApplicationError> {
+    let mut playlist = PLAYLIST.lock().await;
     let playlist = playlist.as_mut().map_err(|e| e.clone())?;
-    playlist.move_to_previous_track(play_mode)
+    playlist.move_to_previous_track(play_mode).await
 }
 
-pub fn set_current_track_index(index: usize) -> Result<(), ApplicationError> {
-    let mut current_index = CURRENT_TRACK_INDEX
-        .lock()
-        .map_err(|e| ApplicationError::MutexLockError(e.to_string()))?;
+pub async fn set_current_track_index(index: usize) -> Result<(), ApplicationError> {
+    let mut current_index = CURRENT_TRACK_INDEX.lock().await;
     *current_index = index;
     Ok(())
 }
