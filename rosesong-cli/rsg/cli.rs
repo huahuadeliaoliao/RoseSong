@@ -296,10 +296,7 @@ async fn initialize_directories() -> StdResult<String, ApplicationError> {
     let home_dir = std::env::var("HOME")?;
 
     // Define the required directories
-    let required_dirs = [
-        format!("{}/.config/rosesong/playlists", home_dir),
-        format!("{}/.config/rosesong/settings", home_dir),
-    ];
+    let required_dirs = [format!("{}/.config/rosesong/playlists", home_dir)];
 
     // Ensure all directories exist
     for dir in &required_dirs {
