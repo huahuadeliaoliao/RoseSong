@@ -18,7 +18,7 @@
   - RoseSong程序依赖GStreamer和dbus，大部分linux系统都自带了的，如果程序无法正常运行需要检查这两个依赖项
   - 使用以下命令安装 RoseSong，这会将rosesong和rsg二进制可执行文件（仅支持linux amd64）放入到当前用户的.local/bin目录当中：
 ```bash
-curl -s https://raw.githubusercontent.com/huahuadeliaoliao/biCat/main/installation_script/install_rosesong.sh | bash
+curl -s https://raw.githubusercontent.com/huahuadeliaoliao/RoseSong/main/installation_script/install_rosesong.sh | bash
 ```
 ## MacOS
   - 暂不支持
