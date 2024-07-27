@@ -1,7 +1,7 @@
 use crate::error::ApplicationError;
-use once_cell::sync::Lazy;
 use rand::seq::IteratorRandom;
 use serde::Deserialize;
+use std::sync::LazyLock;
 use tokio::sync::Mutex;
 
 #[derive(Deserialize, Clone, Debug)]
@@ -85,9 +85,9 @@ impl Playlist {
     }
 }
 
-pub static PLAYLIST: Lazy<Mutex<Result<Playlist, ApplicationError>>> =
-    Lazy::new(|| Mutex::new(Ok(Playlist { tracks: Vec::new() })));
-pub static CURRENT_TRACK_INDEX: Lazy<Mutex<usize>> = Lazy::new(|| Mutex::new(0));
+pub static PLAYLIST: LazyLock<Mutex<Result<Playlist, ApplicationError>>> =
+    LazyLock::new(|| Mutex::new(Ok(Playlist { tracks: Vec::new() })));
+pub static CURRENT_TRACK_INDEX: LazyLock<Mutex<usize>> = LazyLock::new(|| Mutex::new(0));
 
 pub async fn load_playlist(file_path: &str) -> Result<(), ApplicationError> {
     let playlist = Playlist::load_from_file(file_path).await?;

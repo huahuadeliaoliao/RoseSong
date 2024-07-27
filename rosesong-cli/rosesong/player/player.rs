@@ -14,7 +14,6 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task;
 
-#[derive(Clone, Debug)]
 pub enum PlayerCommand {
     Play,
     PlayBvid(String),
