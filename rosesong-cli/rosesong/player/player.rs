@@ -10,6 +10,7 @@ use gstreamer::MessageView;
 use gstreamer::Pipeline;
 use log::{error, info};
 use reqwest::Client;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, RwLock};
 use tokio::task;
@@ -139,7 +140,7 @@ impl AudioPlayer {
                                     info!("Play {}", new_bvid);
                                     let new_index;
                                     {
-                                        let playlist = PLAYLIST.lock().await;
+                                        let playlist = PLAYLIST.read().await;
                                         let playlist = playlist.as_ref().unwrap();
                                         new_index = playlist.find_track_index(&new_bvid).await;
                                     } // 释放 PLAYLIST 锁
@@ -199,7 +200,7 @@ impl AudioPlayer {
                                 }
                                 PlayerCommand::ReloadPlaylist => {
                                     // Get current track index and details
-                                    let current_index = *CURRENT_TRACK_INDEX.lock().await;
+                                    let current_index = CURRENT_TRACK_INDEX.load(Ordering::SeqCst);
                                     let current_track = get_current_track().await;
 
                                     // Load the new playlist
@@ -212,7 +213,7 @@ impl AudioPlayer {
 
                                     // Handle the reloaded playlist
                                     let should_play = {
-                                        let playlist = PLAYLIST.lock().await;
+                                        let playlist = PLAYLIST.read().await;
                                         let playlist = playlist.as_ref().unwrap();
                                         if let Ok(current_track) = current_track {
                                             // Find the index of the current track in the new playlist
