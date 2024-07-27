@@ -137,16 +137,19 @@ impl AudioPlayer {
                                 }
                                 PlayerCommand::PlayBvid(new_bvid) => {
                                     info!("Play {}", new_bvid);
+                                    let new_index;
                                     {
                                         let playlist = PLAYLIST.lock().await;
                                         let playlist = playlist.as_ref().unwrap();
+                                        new_index = playlist.find_track_index(&new_bvid).await;
+                                    } // 释放 PLAYLIST 锁
 
-                                        if let Some(new_index) = playlist.find_track_index(&new_bvid).await {
-                                            set_current_track_index(new_index).await.ok();
-                                        } else {
-                                            error!("Track with bvid {} not found in the playlist", new_bvid);
-                                        }
+                                    if let Some(index) = new_index {
+                                        set_current_track_index(index).await.ok();
+                                    } else {
+                                        error!("Track with bvid {} not found in the playlist", new_bvid);
                                     }
+
                                     if let Err(e) = play_track(&pipeline, &client).await {
                                         error!("Failed to play track after set new bvid: {}", e);
                                     }
