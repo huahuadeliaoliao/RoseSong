@@ -125,7 +125,7 @@ struct DeleteCommand {
     all: bool,
 }
 
-#[derive(Serialize, Deserialize, Clone, PartialEq)]
+#[derive(Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 struct Track {
     bvid: String,
     cid: String,
