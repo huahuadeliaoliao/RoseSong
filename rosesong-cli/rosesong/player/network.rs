@@ -1,8 +1,7 @@
 use crate::bilibili::fetch_audio_url::fetch_audio_url;
 use crate::error::ApplicationError;
 use glib::object::ObjectExt;
-use gstreamer::prelude::{ElementExtManual, GstBinExtManual};
-use gstreamer::traits::{ElementExt, PadExt};
+use gstreamer::prelude::{ElementExt, ElementExtManual, GstBinExtManual, PadExt};
 use gstreamer::Pipeline;
 use log::{error, info};
 use reqwest::header::{ACCEPT, RANGE, USER_AGENT};
