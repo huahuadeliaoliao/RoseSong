@@ -25,7 +25,7 @@ async fn main() -> Result<(), ApplicationError> {
         ApplicationError::IoError(
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("Failed to get HOME environment variable: {}", e),
+                format!("Failed to get HOME environment variable: {e}"),
             )
             .to_string(),
         )
@@ -33,8 +33,8 @@ async fn main() -> Result<(), ApplicationError> {
 
     // Define the required directories
     let required_dirs = [
-        format!("{}/.config/rosesong/logs", home_dir),
-        format!("{}/.config/rosesong/playlists", home_dir),
+        format!("{home_dir}/.config/rosesong/logs"),
+        format!("{home_dir}/.config/rosesong/playlists"),
     ];
 
     // Ensure all directories exist
@@ -43,7 +43,7 @@ async fn main() -> Result<(), ApplicationError> {
     }
 
     // Check if playlist.toml exists, if not, create an empty one
-    let playlist_path = format!("{}/.config/rosesong/playlists/playlist.toml", home_dir);
+    let playlist_path = format!("{home_dir}/.config/rosesong/playlists/playlist.toml");
     if !Path::new(&playlist_path).exists() {
         fs::write(&playlist_path, "").await?;
     }

@@ -22,15 +22,14 @@ struct ApiResponse<T> {
 
 pub async fn fetch_video_data(client: &Client, bvid: &str) -> Result<VideoData, ApplicationError> {
     let url = format!(
-        "https://api.bilibili.com/x/web-interface/view?bvid={}",
-        bvid
+        "https://api.bilibili.com/x/web-interface/view?bvid={bvid}"
     );
     let response = client.get(&url).send().await.map_err(|e| {
-        eprintln!("Failed to send request to {}: {}", url, e);
+        eprintln!("Failed to send request to {url}: {e}");
         ApplicationError::HttpRequest(e)
     })?;
     let mut api_response: ApiResponse<VideoData> = response.json().await.map_err(|e| {
-        eprintln!("Failed to parse response from {}: {}", url, e);
+        eprintln!("Failed to parse response from {url}: {e}");
         ApplicationError::HttpRequest(e)
     })?;
     api_response.data.bvid = bvid.to_string();
@@ -42,21 +41,20 @@ pub async fn fetch_bvids_from_fid(
     fid: &str,
 ) -> Result<Vec<String>, ApplicationError> {
     let url = format!(
-        "https://api.bilibili.com/x/v3/fav/resource/ids?media_id={}",
-        fid
+        "https://api.bilibili.com/x/v3/fav/resource/ids?media_id={fid}"
     );
     let response = client.get(&url).send().await.map_err(|e| {
-        eprintln!("Failed to send request to {}: {}", url, e);
+        eprintln!("Failed to send request to {url}: {e}");
         ApplicationError::HttpRequest(e)
     })?;
     let json: serde_json::Value = response.json().await.map_err(|e| {
-        eprintln!("Failed to parse response from {}: {}", url, e);
+        eprintln!("Failed to parse response from {url}: {e}");
         ApplicationError::HttpRequest(e)
     })?;
     let bvids: Vec<String> = json["data"]
         .as_array()
         .ok_or_else(|| {
-            eprintln!("Failed to find 'data' array in response from {}", url);
+            eprintln!("Failed to find 'data' array in response from {url}");
             ApplicationError::DataParsingError("数据中缺少 bvids 数组".to_string())
         })?
         .iter()

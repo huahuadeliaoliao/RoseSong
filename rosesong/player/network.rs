@@ -73,9 +73,9 @@ pub async fn set_pipeline_uri_with_headers(
     let mut headers = gstreamer::Structure::new_empty("headers");
     headers.set(
         "User-Agent",
-        &"Mozilla/5.0 BiliDroid/..* (bbcallen@gmail.com)",
+        "Mozilla/5.0 BiliDroid/..* (bbcallen@gmail.com)",
     );
-    headers.set("Referer", &"https://www.bilibili.com");
+    headers.set("Referer", "https://www.bilibili.com");
     source.set_property("extra-headers", &headers);
 
     let decodebin = gstreamer::ElementFactory::make("decodebin")
@@ -84,7 +84,7 @@ pub async fn set_pipeline_uri_with_headers(
             ApplicationError::ElementError("Failed to create decodebin element".to_string())
         })?;
 
-    pipeline.add_many(&[&source, &decodebin]).map_err(|_| {
+    pipeline.add_many([&source, &decodebin]).map_err(|_| {
         ApplicationError::PipelineError("Failed to add elements to pipeline".to_string())
     })?;
     source.link(&decodebin).map_err(|_| {
@@ -106,7 +106,7 @@ pub async fn set_pipeline_uri_with_headers(
                 .expect("Failed to create autoaudiosink element");
 
             pipeline
-                .add_many(&[&audioconvert, &audioresample, &autoaudiosink])
+                .add_many([&audioconvert, &audioresample, &autoaudiosink])
                 .expect("Failed to add elements to pipeline");
 
             audioconvert

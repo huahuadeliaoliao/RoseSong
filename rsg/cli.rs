@@ -155,15 +155,13 @@ async fn main() -> StdResult<(), Box<dyn std::error::Error>> {
                     proxy.play_bvid(&bvid).await?;
                     println!("播放指定bvid");
                 }
+            } else if !is_rosesong_running(&proxy).await? {
+                eprintln!("rosesong 没有处于运行状态");
+            } else if is_playlist_empty().await? {
+                eprintln!("当前播放列表为空，请先添加歌曲");
             } else {
-                if !is_rosesong_running(&proxy).await? {
-                    eprintln!("rosesong 没有处于运行状态");
-                } else if is_playlist_empty().await? {
-                    eprintln!("当前播放列表为空，请先添加歌曲");
-                } else {
-                    proxy.play().await?;
-                    println!("继续播放");
-                }
+                proxy.play().await?;
+                println!("继续播放");
             }
         }
         Commands::Pause => {
@@ -209,24 +207,22 @@ async fn main() -> StdResult<(), Box<dyn std::error::Error>> {
                 eprintln!("rosesong 没有处于运行状态");
             } else if is_playlist_empty().await? {
                 eprintln!("当前播放列表为空，请先添加歌曲");
+            } else if mode_cmd.loop_mode {
+                proxy.set_mode("Loop").await?;
+                println!("设置为循环播放");
+            } else if mode_cmd.shuffle_mode {
+                proxy.set_mode("Shuffle").await?;
+                println!("设置为随机播放");
+            } else if mode_cmd.repeat_mode {
+                proxy.set_mode("Repeat").await?;
+                println!("设置为单曲循环");
             } else {
-                if mode_cmd.loop_mode {
-                    proxy.set_mode("Loop").await?;
-                    println!("设置为循环播放");
-                } else if mode_cmd.shuffle_mode {
-                    proxy.set_mode("Shuffle").await?;
-                    println!("设置为随机播放");
-                } else if mode_cmd.repeat_mode {
-                    proxy.set_mode("Repeat").await?;
-                    println!("设置为单曲循环");
-                } else {
-                    eprintln!("没有这个播放模式");
-                }
+                eprintln!("没有这个播放模式");
             }
         }
         Commands::Add(add_cmd) => {
             if let Err(e) = add_tracks(add_cmd.fid, add_cmd.bvid, &proxy).await {
-                eprintln!("导入出现错误: {}", e);
+                eprintln!("导入出现错误: {e}");
             }
         }
         Commands::Delete(delete_cmd) => {
@@ -239,7 +235,7 @@ async fn main() -> StdResult<(), Box<dyn std::error::Error>> {
             )
             .await
             {
-                eprintln!("删除出现错误: {}", e);
+                eprintln!("删除出现错误: {e}");
             }
         }
         Commands::Find(find_cmd) => {
@@ -247,19 +243,17 @@ async fn main() -> StdResult<(), Box<dyn std::error::Error>> {
                 eprintln!("rosesong 没有处于运行状态");
             } else if is_playlist_empty().await? {
                 eprintln!("当前播放列表为空，请先添加歌曲");
-            } else {
-                if let Err(e) =
-                    find_track(find_cmd.bvid, find_cmd.cid, find_cmd.title, find_cmd.owner).await
-                {
-                    eprintln!("查找出现错误: {}", e);
-                }
+            } else if let Err(e) =
+                find_track(find_cmd.bvid, find_cmd.cid, find_cmd.title, find_cmd.owner).await
+            {
+                eprintln!("查找出现错误: {e}");
             }
         }
         Commands::Playlist => {
             if is_playlist_empty().await? {
                 eprintln!("当前播放列表为空，请先添加歌曲");
             } else if let Err(e) = display_playlist().await {
-                eprintln!("显示播放列表出现错误: {}", e);
+                eprintln!("显示播放列表出现错误: {e}");
             }
         }
         Commands::Start => {
@@ -274,7 +268,7 @@ async fn is_rosesong_running(
     proxy: &MyPlayerProxy<'_>,
 ) -> StdResult<bool, Box<dyn std::error::Error>> {
     match proxy.test_connection().await {
-        Ok(_) => Ok(true),
+        Ok(()) => Ok(true),
         Err(_) => Ok(false),
     }
 }
@@ -296,7 +290,7 @@ async fn initialize_directories() -> StdResult<String, ApplicationError> {
     let home_dir = std::env::var("HOME")?;
 
     // Define the required directories
-    let required_dirs = [format!("{}/.config/rosesong/playlists", home_dir)];
+    let required_dirs = [format!("{home_dir}/.config/rosesong/playlists")];
 
     // Ensure all directories exist
     for dir in &required_dirs {
@@ -304,12 +298,12 @@ async fn initialize_directories() -> StdResult<String, ApplicationError> {
     }
 
     // Check if playlist.toml exists, if not, create an empty one
-    let playlist_path = format!("{}/.config/rosesong/playlists/playlist.toml", home_dir);
+    let playlist_path = format!("{home_dir}/.config/rosesong/playlists/playlist.toml");
     if !Path::new(&playlist_path).exists() {
         fs::write(&playlist_path, "").await?;
     }
 
-    Ok(format!("{}/.config/rosesong/playlists", home_dir))
+    Ok(format!("{home_dir}/.config/rosesong/playlists"))
 }
 
 async fn start_rosesong(proxy: &MyPlayerProxy<'_>) -> StdResult<(), Box<dyn std::error::Error>> {
@@ -384,9 +378,7 @@ async fn import_favorite_or_bvid(
         let content = fs::read_to_string(&playlist_path)
             .await
             .map_err(ApplicationError::Io)?;
-        toml::from_str::<Playlist>(&content)
-            .map(|playlist| playlist.tracks)
-            .unwrap_or_else(|_| Vec::new())
+        toml::from_str::<Playlist>(&content).map_or_else(|_| Vec::new(), |playlist| playlist.tracks)
     } else {
         Vec::new()
     };
@@ -398,7 +390,7 @@ async fn import_favorite_or_bvid(
         .collect();
 
     // Update existing tracks with new tracks
-    for track in existing_tracks.iter_mut() {
+    for track in &mut existing_tracks {
         if let Some(new_track) = new_tracks.iter().find(|t| t.bvid == track.bvid) {
             *track = new_track.clone();
         }
@@ -594,28 +586,16 @@ async fn find_track(
     let mut results = playlist.tracks.clone();
 
     if let Some(bvid) = bvid {
-        results = results
-            .into_iter()
-            .filter(|track| track.bvid == bvid)
-            .collect();
+        results.retain(|track| track.bvid == bvid);
     }
     if let Some(cid) = cid {
-        results = results
-            .into_iter()
-            .filter(|track| track.cid == cid)
-            .collect();
+        results.retain(|track| track.cid == cid);
     }
     if let Some(title) = title {
-        results = results
-            .into_iter()
-            .filter(|track| track.title.contains(&title))
-            .collect();
+        results.retain(|track| track.title.contains(&title));
     }
     if let Some(owner) = owner {
-        results = results
-            .into_iter()
-            .filter(|track| track.owner.contains(&owner))
-            .collect();
+        results.retain(|track| track.owner.contains(&owner));
     }
 
     if results.is_empty() {
@@ -658,7 +638,7 @@ async fn display_playlist() -> StdResult<(), ApplicationError> {
         let start = (current_page - 1) * page_size;
         let end = (start + page_size).min(total_tracks);
 
-        println!("第 {} 页，共 {} 页", current_page, total_pages);
+        println!("第 {current_page} 页，共 {total_pages} 页");
         for (i, track) in tracks[start..end].iter().enumerate() {
             println!(
                 "{}. bvid: {}, cid: {}, title: {}, owner: {}",
@@ -670,7 +650,7 @@ async fn display_playlist() -> StdResult<(), ApplicationError> {
             );
         }
 
-        println!("\n请输入页码（1-{}），或输入 'q' 退出：", total_pages);
+        println!("\n请输入页码（1-{total_pages}），或输入 'q' 退出：");
 
         let mut input = String::new();
         let mut stdin = tokio::io::BufReader::new(tokio::io::stdin());

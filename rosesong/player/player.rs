@@ -71,7 +71,7 @@ impl AudioPlayer {
         let play_mode = Arc::clone(&self.play_mode);
 
         task::spawn(async move {
-            while let Some(_) = eos_receiver.recv().await {
+            while let Some(()) = eos_receiver.recv().await {
                 info!("Track finished playing. Handling EOS...");
 
                 let current_play_mode = *play_mode.read().await;
@@ -261,7 +261,7 @@ impl AudioPlayer {
                             }
                         }
                     },
-                    _ = &mut bus_receiver => {},
+                    () = &mut bus_receiver => {},
                 }
             }
         });

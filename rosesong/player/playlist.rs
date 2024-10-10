@@ -95,7 +95,7 @@ pub async fn load_playlist(file_path: &str) -> Result<(), ApplicationError> {
 
 pub async fn get_current_track() -> Result<Track, ApplicationError> {
     let playlist = PLAYLIST.read().await;
-    let playlist = playlist.as_ref().map_err(|e| e.clone())?;
+    let playlist = playlist.as_ref().map_err(std::clone::Clone::clone)?;
     let index = CURRENT_TRACK_INDEX.load(Ordering::SeqCst);
     playlist.get_current_track(index).await
 }
