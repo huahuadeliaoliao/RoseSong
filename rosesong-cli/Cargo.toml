@@ -17,18 +17,18 @@ path = "rsg/cli.rs"
 lto = true
 
 [dependencies]
-clap = { version = "4.5.9", features = ["derive"] }
-flexi_logger = "0.28.5"
-futures-util = "0.3.30"
+clap = { version = "4.5.20", features = ["derive"] }
+flexi_logger = "0.29.2"
+futures-util = "0.3.31"
 glib = "0.19.9"
 gstreamer = "0.22.6"
 log = "0.4.22"
 rand = "0.8.5"
 reqwest = { version = "0.12.5", features = ["json", "stream"] }
 serde = { version = "1.0.204", features = ["serde_derive"] }
-serde_json = "1.0.120"
-thiserror = "1.0.61"
-tokio = { version = "1.38.0", features = [
+serde_json = "1.0.128"
+thiserror = "1.0.64"
+tokio = { version = "1.40.0", features = [
     "macros",
     "sync",
     "rt",
@@ -36,8 +36,12 @@ tokio = { version = "1.38.0", features = [
     "time",
     "signal",
 ] }
-toml = "0.8.14"
-zbus = { version = "4.3.1", default-features = false, features = ["tokio"] }
+toml = "0.8.19"
+zbus = { version = "4.4.0", default-features = false, features = ["tokio"] }
+
+[lints.clippy]
+pedantic = { level = "warn" }
+cargo = { level = "warn" }
 
 [package.metadata.deb]
 maintainer = "Florian Liao <huahuadeliaoliao@icloud.com>"
