@@ -1,4 +1,4 @@
-use crate::error::ApplicationError;
+use crate::error::App;
 use rand::seq::IteratorRandom;
 use serde::Deserialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,34 +17,29 @@ pub struct Playlist {
 }
 
 impl Playlist {
-    pub async fn load_from_file(file_path: &str) -> Result<Self, ApplicationError> {
+    pub async fn load_from_file(file_path: &str) -> Result<Self, App> {
         log::info!("Loading playlist");
         let content = tokio::fs::read_to_string(file_path).await?;
         let playlist: Playlist = toml::from_str(&content)?;
         Ok(playlist)
     }
 
-    pub async fn get_current_track(&self, index: usize) -> Result<Track, ApplicationError> {
+    pub fn get_current_track(&self, index: usize) -> Result<Track, App> {
         self.tracks
             .get(index)
-            .cloned() // Clone the Track to return an owned value
-            .ok_or_else(|| {
-                ApplicationError::DataParsingError("Track index out of bounds".to_string())
-            })
+            .cloned()
+            .ok_or_else(|| App::DataParsing("Track index out of bounds".to_string()))
     }
 
-    pub async fn move_to_next_track(
-        &mut self,
-        play_mode: PlayMode,
-    ) -> Result<usize, ApplicationError> {
+    pub fn move_to_next_track(&mut self, play_mode: PlayMode) -> Result<usize, App> {
         let current_index = CURRENT_TRACK_INDEX.load(Ordering::SeqCst);
         let new_index = match play_mode {
             PlayMode::Loop => (current_index + 1) % self.tracks.len(),
             PlayMode::Shuffle => {
                 let mut rng = rand::thread_rng();
-                (0..self.tracks.len()).choose(&mut rng).ok_or_else(|| {
-                    ApplicationError::DataParsingError("Failed to choose random track".to_string())
-                })?
+                (0..self.tracks.len())
+                    .choose(&mut rng)
+                    .ok_or_else(|| App::DataParsing("Failed to choose random track".to_string()))?
             }
             PlayMode::Repeat => current_index,
         };
@@ -52,10 +47,7 @@ impl Playlist {
         Ok(new_index)
     }
 
-    pub async fn move_to_previous_track(
-        &mut self,
-        play_mode: PlayMode,
-    ) -> Result<usize, ApplicationError> {
+    pub fn move_to_previous_track(&mut self, play_mode: PlayMode) -> Result<usize, App> {
         let current_index = CURRENT_TRACK_INDEX.load(Ordering::SeqCst);
         let new_index = match play_mode {
             PlayMode::Loop => {
@@ -67,9 +59,9 @@ impl Playlist {
             }
             PlayMode::Shuffle => {
                 let mut rng = rand::thread_rng();
-                (0..self.tracks.len()).choose(&mut rng).ok_or_else(|| {
-                    ApplicationError::DataParsingError("Failed to choose random track".to_string())
-                })?
+                (0..self.tracks.len())
+                    .choose(&mut rng)
+                    .ok_or_else(|| App::DataParsing("Failed to choose random track".to_string()))?
             }
             PlayMode::Repeat => current_index,
         };
@@ -77,42 +69,42 @@ impl Playlist {
         Ok(new_index)
     }
 
-    pub async fn find_track_index(&self, bvid: &str) -> Option<usize> {
+    pub fn find_track_index(&self, bvid: &str) -> Option<usize> {
         self.tracks.iter().position(|track| track.bvid == bvid)
     }
 }
 
-pub static PLAYLIST: LazyLock<RwLock<Result<Playlist, ApplicationError>>> =
+pub static PLAYLIST: LazyLock<RwLock<Result<Playlist, App>>> =
     LazyLock::new(|| RwLock::new(Ok(Playlist { tracks: Vec::new() })));
 pub static CURRENT_TRACK_INDEX: LazyLock<AtomicUsize> = LazyLock::new(|| AtomicUsize::new(0));
 
-pub async fn load_playlist(file_path: &str) -> Result<(), ApplicationError> {
+pub async fn load(file_path: &str) -> Result<(), App> {
     let playlist = Playlist::load_from_file(file_path).await?;
     let mut playlist_lock = PLAYLIST.write().await;
     *playlist_lock = Ok(playlist); // Replace the old playlist with the new one
     Ok(())
 }
 
-pub async fn get_current_track() -> Result<Track, ApplicationError> {
+pub async fn get_current_track() -> Result<Track, App> {
     let playlist = PLAYLIST.read().await;
     let playlist = playlist.as_ref().map_err(std::clone::Clone::clone)?;
     let index = CURRENT_TRACK_INDEX.load(Ordering::SeqCst);
-    playlist.get_current_track(index).await
+    playlist.get_current_track(index)
 }
 
-pub async fn move_to_next_track(play_mode: PlayMode) -> Result<usize, ApplicationError> {
+pub async fn move_to_next_track(play_mode: PlayMode) -> Result<usize, App> {
     let mut playlist = PLAYLIST.write().await;
     let playlist = playlist.as_mut().map_err(|e| e.clone())?;
-    playlist.move_to_next_track(play_mode).await
+    playlist.move_to_next_track(play_mode)
 }
 
-pub async fn move_to_previous_track(play_mode: PlayMode) -> Result<usize, ApplicationError> {
+pub async fn move_to_previous_track(play_mode: PlayMode) -> Result<usize, App> {
     let mut playlist = PLAYLIST.write().await;
     let playlist = playlist.as_mut().map_err(|e| e.clone())?;
-    playlist.move_to_previous_track(play_mode).await
+    playlist.move_to_previous_track(play_mode)
 }
 
-pub async fn set_current_track_index(index: usize) -> Result<(), ApplicationError> {
+pub async fn set_current_track_index(index: usize) -> Result<(), App> {
     CURRENT_TRACK_INDEX.store(index, Ordering::SeqCst);
     Ok(())
 }

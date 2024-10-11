@@ -1,5 +1,5 @@
 use crate::bilibili::fetch_audio_url::fetch_audio_url;
-use crate::error::ApplicationError;
+use crate::error::App;
 use glib::object::ObjectExt;
 use gstreamer::prelude::{ElementExt, ElementExtManual, GstBinExtManual, PadExt};
 use gstreamer::Pipeline;
@@ -8,7 +8,7 @@ use reqwest::header::{ACCEPT, RANGE, USER_AGENT};
 use reqwest::Client;
 use tokio::time::{sleep, Duration};
 
-pub async fn verify_audio_url(client: &Client, url: &str) -> Result<bool, ApplicationError> {
+pub async fn verify_audio_url(client: &Client, url: &str) -> Result<bool, App> {
     let response = client
         .get(url)
         .header(USER_AGENT, "Mozilla/5.0 BiliDroid/..* (bbcallen@gmail.com)")
@@ -17,7 +17,7 @@ pub async fn verify_audio_url(client: &Client, url: &str) -> Result<bool, Applic
         .header("Referer", "https://www.bilibili.com")
         .send()
         .await
-        .map_err(|e| ApplicationError::NetworkError(e.to_string()))?;
+        .map_err(|e| App::Network(e.to_string()))?;
 
     Ok(response.status().is_success())
 }
@@ -26,7 +26,7 @@ pub async fn fetch_and_verify_audio_url(
     client: &Client,
     bvid: &str,
     cid: &str,
-) -> Result<String, ApplicationError> {
+) -> Result<String, App> {
     const MAX_RETRIES: u32 = 3;
     const INITIAL_RETRY_DELAY: Duration = Duration::from_secs(1);
     let mut retry_delay = INITIAL_RETRY_DELAY;
@@ -54,20 +54,15 @@ pub async fn fetch_and_verify_audio_url(
         }
     }
 
-    Err(ApplicationError::FetchError(
+    Err(App::Fetch(
         "Max retries reached for fetching and verifying audio URL".to_string(),
     ))
 }
 
-pub async fn set_pipeline_uri_with_headers(
-    pipeline: &Pipeline,
-    url: &str,
-) -> Result<(), ApplicationError> {
+pub async fn set_pipeline_uri_with_headers(pipeline: &Pipeline, url: &str) -> Result<(), App> {
     let source = gstreamer::ElementFactory::make("souphttpsrc")
         .build()
-        .map_err(|_| {
-            ApplicationError::ElementError("Failed to create souphttpsrc element".to_string())
-        })?;
+        .map_err(|_| App::Element("Failed to create souphttpsrc element".to_string()))?;
     source.set_property("location", url);
 
     let mut headers = gstreamer::Structure::new_empty("headers");
@@ -80,16 +75,14 @@ pub async fn set_pipeline_uri_with_headers(
 
     let decodebin = gstreamer::ElementFactory::make("decodebin")
         .build()
-        .map_err(|_| {
-            ApplicationError::ElementError("Failed to create decodebin element".to_string())
-        })?;
+        .map_err(|_| App::Element("Failed to create decodebin element".to_string()))?;
 
-    pipeline.add_many([&source, &decodebin]).map_err(|_| {
-        ApplicationError::PipelineError("Failed to add elements to pipeline".to_string())
-    })?;
-    source.link(&decodebin).map_err(|_| {
-        ApplicationError::LinkError("Failed to link source to decodebin".to_string())
-    })?;
+    pipeline
+        .add_many([&source, &decodebin])
+        .map_err(|_| App::Pipeline("Failed to add elements to pipeline".to_string()))?;
+    source
+        .link(&decodebin)
+        .map_err(|_| App::Link("Failed to link source to decodebin".to_string()))?;
 
     let pipeline_weak = pipeline.downgrade();
 
@@ -137,8 +130,8 @@ pub async fn set_pipeline_uri_with_headers(
         }
     });
 
-    pipeline.set_state(gstreamer::State::Playing).map_err(|_| {
-        ApplicationError::StateError("Failed to set pipeline to Playing".to_string())
-    })?;
+    pipeline
+        .set_state(gstreamer::State::Playing)
+        .map_err(|_| App::State("Failed to set pipeline to Playing".to_string()))?;
     Ok(())
 }

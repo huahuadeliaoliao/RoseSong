@@ -9,114 +9,112 @@ use tokio::task::JoinError;
 use zbus::Error as ZbusError;
 
 #[derive(Error, Debug, Clone)]
-pub enum ApplicationError {
+pub enum App {
     #[error("Network error: {0}")]
-    NetworkError(String),
+    Network(String),
 
     #[error("I/O error: {0}")]
-    IoError(String),
+    Io(String),
 
     #[error("Data parsing error: {0}")]
-    DataParsingError(String),
+    DataParsing(String),
 
     #[error("Header value error: {0}")]
-    HeaderValueError(String),
+    HeaderValue(String),
 
     #[error("Semaphore acquire error: {0}")]
-    SemaphoreAcquireError(String),
+    SemaphoreAcquire(String),
 
     #[error("Join task error: {0}")]
-    JoinTaskError(String),
+    JoinTask(String),
 
     #[error("GStreamer initialization error: {0}")]
-    InitError(String),
+    Init(String),
 
     #[error("TOML parsing error: {0}")]
-    TomlParsingError(String),
+    TomlParsing(String),
 
     #[error("Fetch error: {0}")]
-    FetchError(String),
+    Fetch(String),
 
     #[error("Logger initialization error: {0}")]
-    LoggerError(String),
+    Logger(String),
 
     #[error("Channel send error: {0}")]
-    SendError(String),
+    Send(String),
 
     #[error("GStreamer element error: {0}")]
-    ElementError(String),
+    Element(String),
 
     #[error("GStreamer pipeline error: {0}")]
-    PipelineError(String),
+    Pipeline(String),
 
     #[error("GStreamer link error: {0}")]
-    LinkError(String),
+    Link(String),
 
     #[error("GStreamer state error: {0}")]
-    StateError(String),
+    State(String),
 
     #[error("ZBus error: {0}")]
-    ZBusError(String),
+    ZBus(String),
 }
 
-impl From<reqwest::Error> for ApplicationError {
+impl From<reqwest::Error> for App {
     fn from(error: reqwest::Error) -> Self {
-        ApplicationError::NetworkError(error.to_string())
+        App::Network(error.to_string())
     }
 }
 
-impl From<io::Error> for ApplicationError {
+impl From<io::Error> for App {
     fn from(error: io::Error) -> Self {
-        ApplicationError::IoError(error.to_string())
+        App::Io(error.to_string())
     }
 }
 
-impl From<InvalidHeaderValue> for ApplicationError {
+impl From<InvalidHeaderValue> for App {
     fn from(error: InvalidHeaderValue) -> Self {
-        ApplicationError::HeaderValueError(error.to_string())
+        App::HeaderValue(error.to_string())
     }
 }
 
-impl From<AcquireError> for ApplicationError {
+impl From<AcquireError> for App {
     fn from(error: AcquireError) -> Self {
-        ApplicationError::SemaphoreAcquireError(error.to_string())
+        App::SemaphoreAcquire(error.to_string())
     }
 }
 
-impl From<JoinError> for ApplicationError {
+impl From<JoinError> for App {
     fn from(error: JoinError) -> Self {
-        ApplicationError::JoinTaskError(error.to_string())
+        App::JoinTask(error.to_string())
     }
 }
 
-impl From<toml::de::Error> for ApplicationError {
+impl From<toml::de::Error> for App {
     fn from(error: toml::de::Error) -> Self {
-        ApplicationError::TomlParsingError(error.to_string())
+        App::TomlParsing(error.to_string())
     }
 }
 
-impl From<FlexiLoggerError> for ApplicationError {
+impl From<FlexiLoggerError> for App {
     fn from(error: FlexiLoggerError) -> Self {
-        ApplicationError::LoggerError(error.to_string())
+        App::Logger(error.to_string())
     }
 }
 
-impl<T> From<SendError<T>> for ApplicationError {
+impl<T> From<SendError<T>> for App {
     fn from(error: SendError<T>) -> Self {
-        ApplicationError::SendError(error.to_string())
+        App::Send(error.to_string())
     }
 }
 
-impl From<BoolError> for ApplicationError {
+impl From<BoolError> for App {
     fn from(_: BoolError) -> Self {
-        ApplicationError::InitError(
-            "Failed to perform an operation on GStreamer pipeline".to_string(),
-        )
+        App::Init("Failed to perform an operation on GStreamer pipeline".to_string())
     }
 }
 
-impl From<ZbusError> for ApplicationError {
+impl From<ZbusError> for App {
     fn from(error: ZbusError) -> Self {
-        ApplicationError::ZBusError(error.to_string())
+        App::ZBus(error.to_string())
     }
 }

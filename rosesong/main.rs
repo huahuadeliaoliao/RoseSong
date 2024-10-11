@@ -4,12 +4,12 @@ mod error;
 mod player;
 mod temp_dbus;
 
-use crate::error::ApplicationError;
+use crate::error::App;
 use crate::player::playlist::PlayMode;
-use crate::player::AudioPlayer;
+use crate::player::Audio;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use log::{error, warn};
-use player::playlist::load_playlist;
+use player::playlist::load;
 use std::path::Path;
 use std::process;
 use std::sync::Arc;
@@ -20,9 +20,9 @@ use tokio::{
 };
 
 #[tokio::main]
-async fn main() -> Result<(), ApplicationError> {
+async fn main() -> Result<(), App> {
     let home_dir = std::env::var("HOME").map_err(|e| {
-        ApplicationError::IoError(
+        App::Io(
             std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 format!("Failed to get HOME environment variable: {e}"),
@@ -74,7 +74,7 @@ async fn main() -> Result<(), ApplicationError> {
         }
     }
 
-    load_playlist(&playlist_path).await?;
+    load(&playlist_path).await?;
     let (stop_sender, stop_receiver) = watch::channel(());
     let _audio_player = start_player_and_dbus_listener(stop_sender).await?;
     wait_for_stop_signal(stop_receiver).await;
@@ -106,14 +106,12 @@ async fn start_temp_dbus_listener(
     Ok(())
 }
 
-async fn start_player_and_dbus_listener(
-    stop_signal: watch::Sender<()>,
-) -> Result<AudioPlayer, ApplicationError> {
+async fn start_player_and_dbus_listener(stop_signal: watch::Sender<()>) -> Result<Audio, App> {
     let play_mode = PlayMode::Loop;
     let initial_track_index = 0;
     let (command_sender, command_receiver) = mpsc::channel(1);
 
-    let audio_player = AudioPlayer::new(
+    let audio_player = Audio::new(
         play_mode,
         initial_track_index,
         Arc::new(Mutex::new(command_receiver)),

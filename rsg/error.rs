@@ -4,13 +4,13 @@ use thiserror::Error;
 use zbus::Error as ZbusError;
 
 #[derive(Error, Debug)]
-pub enum ApplicationError {
+pub enum App {
     #[error("HTTP request failed")]
     HttpRequest(#[from] ReqwestError),
     #[error("I/O operation failed")]
     Io(#[from] IoError),
     #[error("Data parsing error: {0}")]
-    DataParsingError(String),
+    DataParsing(String),
     #[error("Invalid input: {0}")]
     InvalidInput(String),
     #[error("Environment variable error")]
@@ -18,7 +18,7 @@ pub enum ApplicationError {
     #[error("UTF-8 conversion error")]
     Utf8Conversion(#[from] std::string::FromUtf8Error),
     #[error("Oneshot channel receive error")]
-    OneshotRecvError(#[from] tokio::sync::oneshot::error::RecvError),
+    OneshotRecv(#[from] tokio::sync::oneshot::error::RecvError),
     #[error("Zbus error")]
     Zbus(#[from] ZbusError),
 }

@@ -1,6 +1,6 @@
 use log::error;
 use tokio::sync::watch;
-use zbus::{fdo, interface, ConnectionBuilder};
+use zbus::{interface, ConnectionBuilder};
 
 #[derive(Clone)]
 pub struct TempDBus {
@@ -9,22 +9,19 @@ pub struct TempDBus {
 
 #[interface(name = "org.rosesong.Player")]
 impl TempDBus {
-    async fn test_connection(&self) -> fdo::Result<()> {
-        Ok(())
-    }
+    #[allow(clippy::unused_self)]
+    fn test_connection(&self) {}
 
-    async fn playlist_change(&self) -> fdo::Result<()> {
+    fn playlist_change(&self) {
         if let Err(e) = self.stop_signal.send(()) {
             error!("TempDBus: Failed to send stop signal: {}", e);
         }
-        Ok(())
     }
 
-    async fn stop(&self) -> fdo::Result<()> {
+    fn stop(&self) {
         if let Err(e) = self.stop_signal.send(()) {
             error!("TempDBus: Failed to send stop signal: {}", e);
         }
-        Ok(())
     }
 }
 

@@ -1,5 +1,5 @@
+pub mod gst_logic;
 pub mod network;
-pub mod player;
 pub mod playlist;
-pub use player::AudioPlayer;
-pub use player::PlayerCommand;
+pub use gst_logic::Audio;
+pub use gst_logic::Command;

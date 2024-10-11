@@ -4,6 +4,10 @@ version = "1.0.0"
 edition = "2021"
 authors = ["Florian Liao <huahuadeliaoliao@icloud.com>"]
 description = "Command line player built by rust based on gstreamer decoding and playing bilibili audio, using dbus for inter-process communication."
+license = "MIT"
+repository = "https://github.com/huahuadeliaoliao/RoseSong"
+keywords = ["audio", "player", "bilibili", "gstreamer", "dbus"]
+categories = ["audio", "media", "command-line-utilities"]
 
 [[bin]]
 name = "rosesong"
@@ -20,12 +24,12 @@ lto = true
 clap = { version = "4.5.20", features = ["derive"] }
 flexi_logger = "0.29.2"
 futures-util = "0.3.31"
-glib = "0.19.9"
-gstreamer = "0.22.6"
+glib = "0.20.4"
+gstreamer = "0.23.2"
 log = "0.4.22"
 rand = "0.8.5"
-reqwest = { version = "0.12.5", features = ["json", "stream"] }
-serde = { version = "1.0.204", features = ["serde_derive"] }
+reqwest = { version = "0.12.8", features = ["json", "stream"] }
+serde = { version = "1.0.210", features = ["serde_derive"] }
 serde_json = "1.0.128"
 thiserror = "1.0.64"
 tokio = { version = "1.40.0", features = [
@@ -35,13 +39,13 @@ tokio = { version = "1.40.0", features = [
     "rt-multi-thread",
     "time",
     "signal",
+    "io-std"
 ] }
 toml = "0.8.19"
 zbus = { version = "4.4.0", default-features = false, features = ["tokio"] }
 
 [lints.clippy]
 pedantic = { level = "warn" }
-cargo = { level = "warn" }
 
 [package.metadata.deb]
 maintainer = "Florian Liao <huahuadeliaoliao@icloud.com>"
