@@ -18,7 +18,7 @@ name = "rsg"
 path = "rsg/cli.rs"
 
 [profile.release]
-lto = true
+lto = "fat"
 
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
