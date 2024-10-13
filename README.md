@@ -26,8 +26,14 @@
 curl -s https://raw.githubusercontent.com/huahuadeliaoliao/RoseSong/main/installation_script/install_rosesong.sh | bash
 ```
 
+- 也可以直接使用cargo安装RoseSong：
+
+```bash
+cargo install rosesong
+```
+
 ## 2. MacOS
-- **暂不支持**
+- 如果安装了GStreamer和D-Bus可以使用cargo安装RoseSong
 
 ## 3. Windows
 - **暂不支持**
