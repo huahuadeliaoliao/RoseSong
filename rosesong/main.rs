@@ -13,11 +13,15 @@ use player::playlist::load;
 use std::path::Path;
 use std::process;
 use std::sync::Arc;
+use tikv_jemallocator::Jemalloc;
 use tokio::fs;
 use tokio::{
     sync::{mpsc, watch, Mutex},
     task,
 };
+
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 #[tokio::main]
 async fn main() -> Result<(), App> {
