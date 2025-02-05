@@ -23,26 +23,27 @@ lto = "fat"
 
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
-flexi_logger = "0.29.2"
-futures-util = "0.3.31"
-glib = "0.20.4"
-gstreamer = "0.23.2"
-log = "0.4.22"
-rand = "0.8.5"
-reqwest = { version = "0.12.8", features = ["json", "stream"] }
-serde = { version = "1.0.210", features = ["serde_derive"] }
-serde_json = "1.0.128"
-thiserror = "1.0.64"
-tokio = { version = "1.40.0", features = [
-    "macros",
-    "sync",
-    "rt",
-    "rt-multi-thread",
-    "time",
-    "signal",
-    "io-std"
+flexi_logger = "0.29"
+futures-util = "0.3"
+glib = "0.20"
+gstreamer = "0.23"
+log = "0.4"
+rand = "0.9"
+reqwest = { version = "0.12", features = ["json", "stream"] }
+serde = { version = "1", features = ["serde_derive"] }
+serde_json = "1"
+thiserror = "2"
+tikv-jemallocator = "0.6"
+tokio = { version = "1", features = [
+  "macros",
+  "sync",
+  "rt",
+  "rt-multi-thread",
+  "time",
+  "signal",
+  "io-std",
 ] }
-toml = "0.8.19"
+toml = "0.8"
 zbus = { version = "4.4.0", default-features = false, features = ["tokio"] }
 
 [lints.clippy]
