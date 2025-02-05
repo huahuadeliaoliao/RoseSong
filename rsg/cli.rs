@@ -544,7 +544,7 @@ async fn display_playlist() -> StdResult<()> {
     let tracks = playlist.tracks;
     let total_tracks = tracks.len();
     let page_size = 10;
-    let total_pages = (total_tracks + page_size - 1) / page_size;
+    let total_pages = total_tracks.div_ceil(page_size);
     let mut current_page = 1;
     loop {
         let start = (current_page - 1) * page_size;

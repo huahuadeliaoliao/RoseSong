@@ -1,4 +1,5 @@
 use crate::error::App;
+use rand::rng;
 use rand::seq::IteratorRandom;
 use serde::Deserialize;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -36,7 +37,7 @@ impl Playlist {
         let new_index = match play_mode {
             PlayMode::Loop => (current_index + 1) % self.tracks.len(),
             PlayMode::Shuffle => {
-                let mut rng = rand::thread_rng();
+                let mut rng = rng();
                 (0..self.tracks.len())
                     .choose(&mut rng)
                     .ok_or_else(|| App::DataParsing("Failed to choose random track".to_string()))?
@@ -58,7 +59,7 @@ impl Playlist {
                 }
             }
             PlayMode::Shuffle => {
-                let mut rng = rand::thread_rng();
+                let mut rng = rng();
                 (0..self.tracks.len())
                     .choose(&mut rng)
                     .ok_or_else(|| App::DataParsing("Failed to choose random track".to_string()))?
