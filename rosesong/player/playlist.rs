@@ -2,8 +2,8 @@ use crate::error::App;
 use rand::rng;
 use rand::seq::IteratorRandom;
 use serde::Deserialize;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::LazyLock;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::RwLock;
 
 #[derive(Deserialize, Clone, Debug)]

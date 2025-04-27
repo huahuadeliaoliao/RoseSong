@@ -1,6 +1,6 @@
 use log::error;
 use tokio::sync::watch;
-use zbus::{interface, ConnectionBuilder};
+use zbus::{ConnectionBuilder, interface};
 
 #[derive(Clone)]
 pub struct TempDBus {

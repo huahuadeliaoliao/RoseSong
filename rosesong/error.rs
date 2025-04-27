@@ -3,8 +3,8 @@ use glib::BoolError;
 use reqwest::header::InvalidHeaderValue;
 use std::io;
 use thiserror::Error;
-use tokio::sync::mpsc::error::SendError;
 use tokio::sync::AcquireError;
+use tokio::sync::mpsc::error::SendError;
 use tokio::task::JoinError;
 use zbus::Error as ZbusError;
 

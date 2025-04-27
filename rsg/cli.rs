@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 use tokio::{fs, io::AsyncBufReadExt, io::AsyncWriteExt, process::Command};
-use zbus::{proxy, Connection};
+use zbus::{Connection, proxy};
 
 type StdResult<T> = std::result::Result<T, App>;
 

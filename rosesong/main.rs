@@ -5,8 +5,8 @@ mod player;
 mod temp_dbus;
 
 use crate::error::App;
-use crate::player::playlist::PlayMode;
 use crate::player::Audio;
+use crate::player::playlist::PlayMode;
 use flexi_logger::{Cleanup, Criterion, Duplicate, FileSpec, Logger, Naming};
 use log::{error, warn};
 use player::playlist::load;
@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tikv_jemallocator::Jemalloc;
 use tokio::fs;
 use tokio::{
-    sync::{mpsc, watch, Mutex},
+    sync::{Mutex, mpsc, watch},
     task,
 };
 

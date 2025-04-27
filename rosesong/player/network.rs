@@ -1,12 +1,12 @@
 use crate::bilibili::fetch_audio_url::fetch_audio_url;
 use crate::error::App;
 use glib::object::ObjectExt;
-use gstreamer::prelude::{ElementExt, ElementExtManual, GstBinExtManual, PadExt};
 use gstreamer::Pipeline;
+use gstreamer::prelude::{ElementExt, ElementExtManual, GstBinExtManual, PadExt};
 use log::{error, info};
-use reqwest::header::{ACCEPT, RANGE, USER_AGENT};
 use reqwest::Client;
-use tokio::time::{sleep, Duration};
+use reqwest::header::{ACCEPT, RANGE, USER_AGENT};
+use tokio::time::{Duration, sleep};
 
 pub async fn verify_audio_url(client: &Client, url: &str) -> Result<bool, App> {
     let response = client

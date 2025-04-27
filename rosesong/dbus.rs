@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use log::info;
-use tokio::sync::{mpsc, watch, Mutex};
-use zbus::{fdo, interface, ConnectionBuilder};
+use tokio::sync::{Mutex, mpsc, watch};
+use zbus::{ConnectionBuilder, fdo, interface};
 
-use crate::player::playlist::PlayMode;
 use crate::player::Command;
+use crate::player::playlist::PlayMode;
 
 #[derive(Clone)]
 pub struct PlayerDBus {

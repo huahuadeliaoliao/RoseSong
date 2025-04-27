@@ -1,18 +1,18 @@
 use crate::error::App;
 use crate::player::network::{fetch_and_verify_audio_url, set_pipeline_uri_with_headers};
 use crate::player::playlist::{
-    get_current_track, load, move_to_next_track, move_to_previous_track, set_current_track_index,
-    PlayMode, CURRENT_TRACK_INDEX, PLAYLIST,
+    CURRENT_TRACK_INDEX, PLAYLIST, PlayMode, get_current_track, load, move_to_next_track,
+    move_to_previous_track, set_current_track_index,
 };
 use futures_util::stream::StreamExt;
-use gstreamer::prelude::*;
 use gstreamer::MessageView;
 use gstreamer::Pipeline;
+use gstreamer::prelude::*;
 use log::{error, info};
 use reqwest::Client;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use std::sync::atomic::Ordering;
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task;
 
 pub enum Command {
